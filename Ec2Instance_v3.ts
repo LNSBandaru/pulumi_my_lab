@@ -1,3 +1,14 @@
+import * as aws from '@pulumi/aws';
+import * as pulumi from '@pulumi/pulumi';
+import { _ } from '@securustablets/libraries.utils';
+import { bool, json } from 'envalid';
+import { Global, GlobalEnv } from './Global';
+import { name as makeName, tags } from './ResourceBuilder';
+import { TpComponentResource } from './TpComponentResource';
+import { Validators } from './Validators';
+
+export type Ec2InstanceArgs = Record<string, never>;
+
 export interface Ec2InstanceEnv extends Pick<GlobalEnv, 'DELETION_PROTECTION_ENABLED'> {
   EC2_INSTANCE_AMI_ID: string;
   EC2_INSTANCE_TYPE: string;
@@ -20,16 +31,12 @@ export interface Ec2InstanceEnv extends Pick<GlobalEnv, 'DELETION_PROTECTION_ENA
   EC2_INSTANCE_EBS_BLOCK_VOLUME_TYPE: string;
 }
 
-export interface Ec2InstanceArgs {  
-}
-
 export class Ec2Instance extends TpComponentResource<
     Ec2InstanceArgs,
     Ec2InstanceEnv
 > {
   public readonly instance: aws.ec2.Instance;
   private ec2SecurityGroup: aws.ec2.SecurityGroup;
-  public config: { lookup: (name: string) => {} }
 
   constructor(
     name: string, 
@@ -37,7 +44,8 @@ export class Ec2Instance extends TpComponentResource<
     opts?: pulumi.ComponentResourceOptions
   ){
     super("tp:Ec2Instance:Ec2Instance", name, args, opts);
-    this.ec2SecurityGroup =  new aws.ec2.SecurityGroup(`${name}-sg`, {
+    this.ec2SecurityGroup =  new aws.ec2.SecurityGroup(
+      makeName(`${name}-sg`), {
       vpcId: this.config.lookup('EC2_INSTANCE_VPC_ID'),
       description: "All trafic allow",
       ingress: [
@@ -49,17 +57,17 @@ export class Ec2Instance extends TpComponentResource<
       tags: tags()
     }, { parent: this })
 
-    this.instance = new aws.ec2.Instance(`${name}-ec2`, {
-    
-    ami: this.config.lookup('EC2_INSTANCE_AMI_ID'),
-    instanceType: this.config.lookup('EC2_INSTANCE_TYPE'),
-    keyName: this.config.lookup('EC2_INSTANCE_KEY_NAME'),
-    subnetId: this.config.lookup('EC2_INSTANCE_SUBNET_ID'),
-    // vpcSecurityGroupIds: this.config.lookup('EC2_INSTANCE_SECURITY_GROUP_IDS'),
-    vpcSecurityGroupIds: this.ec2SecurityGroup.id,
-    associatePublicIpAddress: true,
-    ebsOptimized: true,
-    monitoring: false,
+    this.instance = new aws.ec2.Instance(
+      makeName(`${name}-ec2`), {
+      ami: this.config.lookup('EC2_INSTANCE_AMI_ID'),
+      instanceType: this.config.lookup('EC2_INSTANCE_TYPE'),
+      keyName: this.config.lookup('EC2_INSTANCE_KEY_NAME'),
+      subnetId: this.config.lookup('EC2_INSTANCE_SUBNET_ID'),
+      // vpcSecurityGroupIds: this.config.lookup('EC2_INSTANCE_SECURITY_GROUP_IDS'),
+      vpcSecurityGroupIds: [this.ec2SecurityGroup.id],
+      associatePublicIpAddress: true,
+      ebsOptimized: true,
+      monitoring: false,
 
     rootBlockDevice: {
       deviceName: this.config.lookup('EC2_INSTANCE_ROOT_BLOCK_DEVICE_NAME') ?? "/dev/sda1",
@@ -80,5 +88,17 @@ export class Ec2Instance extends TpComponentResource<
     }],
     tags: tags(),
     }, { parent: this }); 
+  }
+
+  static envValidators(name: string): Validators<Ec2InstanceEnv> {
+    return {
+      ..._.pick(Global.envValidators(), ['DELETION_PROTECTION_ENABLED']),
+      ...Validators.makeLocal(name, {
+        EC2_INSTANCE_AMI_ID: str({
+          default: undefined,
+          desc: 'The domain name or ip address of the tracing agent. If not provided, tracing will not be enabled',
+        }),
+      }),
+    };
   }
 }
