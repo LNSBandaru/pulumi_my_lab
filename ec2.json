@@ -1,0 +1,233 @@
+{
+    "Reservations": [
+        {
+            "ReservationId": "r-02b1b1b3e59252afd",
+            "OwnerId": "076813841146",
+            "Groups": [],
+            "Instances": [
+                {
+                    "Architecture": "arm64",
+                    "BlockDeviceMappings": [
+                        { 
+                            "DeviceName": "/dev/sda1",
+                            "Ebs": {
+                                "AttachTime": "2023-12-12T19:32:05+00:00",
+                                "DeleteOnTermination": true,
+                                "Status": "attached",
+                                "VolumeId": "vol-02f96be306692457a"
+                            }
+                        },
+                        {
+                            "DeviceName": "/dev/sdb",
+                            "Ebs": {
+                                "AttachTime": "2023-12-12T19:32:05+00:00",
+                                "DeleteOnTermination": true,
+                                "Status": "attached",
+                                "VolumeId": "vol-0133a792e748236e8"
+                            }
+                        }
+                    ],
+                    "ClientToken": "32ffd8b3-7967-4141-8db3-52f3ef764322",
+                    "EbsOptimized": true,
+                    "EnaSupport": true,
+                    "Hypervisor": "xen",
+                    "IamInstanceProfile": {
+                        "Arn": "arn:aws:iam::076813841146:instance-profile/AmazonSSMRoleForInstancesQuickSetup",
+                        "Id": "AIPARDYTWGL5MJBCLAHYL"
+                    },
+                    "NetworkInterfaces": [
+                        {
+                            "Association": {
+                                "IpOwnerId": "076813841146",
+                                "PublicDnsName": "ec2-184-72-231-138.compute-1.amazonaws.com",
+                                "PublicIp": "184.72.231.138"
+                            },
+                            "Attachment": {
+                                "AttachTime": "2023-12-12T19:32:05+00:00",
+                                "AttachmentId": "eni-attach-0fb4c03ba9bc82014",
+                                "DeleteOnTermination": true,
+                                "DeviceIndex": 0,
+                                "Status": "attached",
+                                "NetworkCardIndex": 0
+                            },
+                            "Description": "",
+                            "Groups": [
+                                {
+                                    "GroupId": "sg-0e3e79b4b04e653ff",
+                                    "GroupName": "Fortinet FortiGate OFT VPN Test"
+                                }
+                            ],
+                            "Ipv6Addresses": [],
+                            "MacAddress": "0a:c7:e9:30:84:d3",
+                            "NetworkInterfaceId": "eni-01d1dea59c6f808da",
+                            "OwnerId": "076813841146",
+                            "PrivateDnsName": "ip-10-93-83-243.ec2.internal",
+                            "PrivateIpAddress": "10.93.83.243",
+                            "PrivateIpAddresses": [
+                                {
+                                    "Association": {
+                                        "IpOwnerId": "076813841146",
+                                        "PublicDnsName": "ec2-184-72-231-138.compute-1.amazonaws.com",
+                                        "PublicIp": "184.72.231.138"
+                                    },
+                                    "Primary": true,
+                                    "PrivateDnsName": "ip-10-93-83-243.ec2.internal",
+                                    "PrivateIpAddress": "10.93.83.243"
+                                },
+                                {
+                                    "Association": {
+                                        "IpOwnerId": "076813841146",
+                                        "PublicDnsName": "ec2-23-20-246-165.compute-1.amazonaws.com",
+                                        "PublicIp": "23.20.246.165"
+                                    },
+                                    "Primary": false,
+                                    "PrivateDnsName": "ip-10-93-83-161.ec2.internal",
+                                    "PrivateIpAddress": "10.93.83.161"
+                                }
+                            ],
+                            "SourceDestCheck": true,
+                            "Status": "in-use",
+                            "SubnetId": "subnet-069e0fb5513593c3a",
+                            "VpcId": "vpc-00deccb411da52653",
+                            "InterfaceType": "interface",
+                            "Operator": {
+                                "Managed": false
+                            }
+                        },
+                        {
+                            "Attachment": {
+                                "AttachTime": "2024-01-09T20:28:10+00:00",
+                                "AttachmentId": "eni-attach-02b69843aba24c9ce",
+                                "DeleteOnTermination": false,
+                                "DeviceIndex": 1,
+                                "Status": "attached",
+                                "NetworkCardIndex": 0
+                            },
+                            "Description": "Officer_VPN_Test_second_interface",
+                            "Groups": [
+                                {
+                                    "GroupId": "sg-0c6c75fcc7e21b414",
+                                    "GroupName": "Officer_Tablet_VPN_second_interface_for_gate"
+                                }
+                            ],
+                            "Ipv6Addresses": [],
+                            "MacAddress": "0a:ad:fd:82:15:bf",
+                            "NetworkInterfaceId": "eni-0aa9f272b5984cf34",
+                            "OwnerId": "076813841146",
+                            "PrivateDnsName": "ip-10-93-65-185.ec2.internal",
+                            "PrivateIpAddress": "10.93.65.185",
+                            "PrivateIpAddresses": [
+                                {
+                                    "Primary": true,
+                                    "PrivateDnsName": "ip-10-93-65-185.ec2.internal",
+                                    "PrivateIpAddress": "10.93.65.185"
+                                }
+                            ],
+                            "SourceDestCheck": true,
+                            "Status": "in-use",
+                            "SubnetId": "subnet-0048ae5bdb6e35dd0",
+                            "VpcId": "vpc-00deccb411da52653",
+                            "InterfaceType": "interface",
+                            "Operator": {
+                                "Managed": false
+                            }
+                        }
+                    ],
+                    "RootDeviceName": "/dev/sda1",
+                    "RootDeviceType": "ebs",
+                    "SecurityGroups": [
+                        {
+                            "GroupId": "sg-0e3e79b4b04e653ff",
+                            "GroupName": "Fortinet FortiGate OFT VPN Test"
+                        }
+                    ],
+                    "SourceDestCheck": true,
+                    "Tags": [
+                        {
+                            "Key": "Name",
+                            "Value": "EVOTABVPNTest"
+                        },
+                        {
+                            "Key": "Unity",
+                            "Value": "Unity"
+                        }
+                    ],
+                    "VirtualizationType": "hvm",
+                    "CpuOptions": {
+                        "CoreCount": 2,
+                        "ThreadsPerCore": 1
+                    },
+                    "CapacityReservationSpecification": {
+                        "CapacityReservationPreference": "open"
+                    },
+                    "HibernationOptions": {
+                        "Configured": false
+                    },
+                    "MetadataOptions": {
+                        "State": "applied",
+                        "HttpTokens": "required",
+                        "HttpPutResponseHopLimit": 1,
+                        "HttpEndpoint": "enabled",
+                        "HttpProtocolIpv6": "disabled",
+                        "InstanceMetadataTags": "disabled"
+                    },
+                    "EnclaveOptions": {
+                        "Enabled": false
+                    },
+                    "BootMode": "uefi",
+                    "PlatformDetails": "Linux/UNIX",
+                    "UsageOperation": "RunInstances",
+                    "UsageOperationUpdateTime": "2023-12-12T19:32:05+00:00",
+                    "PrivateDnsNameOptions": {
+                        "HostnameType": "ip-name",
+                        "EnableResourceNameDnsARecord": false,
+                        "EnableResourceNameDnsAAAARecord": false
+                    },
+                    "MaintenanceOptions": {
+                        "AutoRecovery": "default",
+                        "RebootMigration": "default"
+                    },
+                    "CurrentInstanceBootMode": "uefi",
+                    "NetworkPerformanceOptions": {
+                        "BandwidthWeighting": "default"
+                    },
+                    "Operator": {
+                        "Managed": false
+                    },
+                    "InstanceId": "i-0d3a650f131c3bec4",
+                    "ImageId": "ami-003c670ea14ca1ddd",
+                    "State": {
+                        "Code": 16,
+                        "Name": "running"
+                    },
+                    "PrivateDnsName": "ip-10-93-83-243.ec2.internal",
+                    "PublicDnsName": "ec2-184-72-231-138.compute-1.amazonaws.com",
+                    "StateTransitionReason": "",
+                    "KeyName": "Fortigate_OFT_Test",
+                    "AmiLaunchIndex": 0,
+                    "ProductCodes": [
+                        {
+                            "ProductCodeId": "33ndn84xbrajb9vmu5lxnfpjq",
+                            "ProductCodeType": "marketplace"
+                        }
+                    ],
+                    "InstanceType": "c7gn.large",
+                    "LaunchTime": "2024-04-25T20:43:10+00:00",
+                    "Placement": {
+                        "AvailabilityZoneId": "use1-az4",
+                        "GroupName": "",
+                        "Tenancy": "default",
+                        "AvailabilityZone": "us-east-1a"
+                    },
+                    "Monitoring": {
+                        "State": "disabled"
+                    },
+                    "SubnetId": "subnet-069e0fb5513593c3a",
+                    "VpcId": "vpc-00deccb411da52653",
+                    "PrivateIpAddress": "10.93.83.243",
+                    "PublicIpAddress": "184.72.231.138"
+                }
+            ]
+        }
+    ]
+}
