@@ -1,19 +1,3 @@
-export interface Ec2Instance {
-amiId: string;
-instanceType: string;
-vpcId?: string;
-subnetId: string[];
-securityGroupIds: string;
-keyName?: string;
-userData?: string;
-associateEip?: boolean;
-
-/** Storage */
-rootVolume?: Omit<Ec2VolumeSpec, "deviceName"> & { sizeGib: number } //deviceName not required for root
-dataVolumes?: Ec2VolumeSpec[]; // Mapped as ebsBlockDevices
-instanceStoreDevices?: string[]; // e.g., ["dev/xvdc"] if supported
-}
-
 export interface Ec2InstanceEnv extends Pick<GlobalEnv, 'DELETION_PROTECTION_ENABLED'> {
   EC2_INSTANCE_AMI_ID: string;
   EC2_INSTANCE_TYPE: string;
@@ -85,7 +69,7 @@ export class Ec2Instance extends TpComponentResource<
       encrypted: true,
       tags: tags()
     },
-        // Block Device Mapping configured with two device configurations
+    // BBlock Device Mapping configured with two device configurations
     ebsBlockDevices: [{
       deviceName: this.config.lookup('EC2_INSTANCE_EBS_BLOCK_DEVICE_NAME') ?? "/dev/sdb",
       volumeSize: this.config.lookup('EC2_INSTANCE_EBS_BLOCK_VOLUME_SIZE') ?? 20,
