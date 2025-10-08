@@ -1,0 +1,73 @@
+🧩 1️⃣ Understand Parameter Scope
+Parameter	Scope	Modify In
+wal_level	DB instance	DB parameter group
+max_wal_senders, max_replication_slots	DB cluster	DB cluster parameter group
+
+So, you need to:
+
+Modify the cluster parameter group for replication slot/sender limits.
+
+Modify the instance parameter group for wal_level=logical.
+
+🧩 2️⃣ List Both Groups for Your Cluster
+aws rds describe-db-clusters \
+  --query "DBClusters[*].{Cluster:DBClusterIdentifier, ClusterParamGroup:DBClusterParameterGroup, InstanceParamGroup:DBClusterMembers[0].DBInstanceParameterGroup}"
+
+
+✅ Example:
+
+[
+  {
+    "Cluster": "ordering-prod-cluster",
+    "ClusterParamGroup": "ordering-postgres-cluster-param-group-qa-cdc-enabled",
+    "InstanceParamGroup": "aurora-postgresql15-default"
+  }
+]
+
+🧩 3️⃣ Clone & Edit the Instance Parameter Group (for wal_level)
+aws rds copy-db-parameter-group \
+  --source-db-parameter-group-identifier aurora-postgresql15-default \
+  --target-db-parameter-group-identifier aurora-postgresql15-cdc-enabled-instance \
+  --target-db-parameter-group-description "CDC enabled instance parameter group"
+
+
+Modify:
+
+aws rds modify-db-parameter-group \
+  --db-parameter-group-name aurora-postgresql15-cdc-enabled-instance \
+  --parameters "ParameterName=wal_level,ParameterValue=logical,ApplyMethod=pending-reboot"
+
+🧩 4️⃣ Modify the Cluster Parameter Group (for replication params)
+aws rds modify-db-cluster-parameter-group \
+  --db-cluster-parameter-group-name ordering-postgres-cluster-param-group-qa-cdc-enabled \
+  --parameters \
+    "ParameterName=max_wal_senders,ParameterValue=10,ApplyMethod=pending-reboot" \
+    "ParameterName=max_replication_slots,ParameterValue=10,ApplyMethod=pending-reboot"
+
+🧩 5️⃣ Attach Both Parameter Groups
+aws rds modify-db-instance \
+  --db-instance-identifier ordering-prod-writer-1 \
+  --db-parameter-group-name aurora-postgresql15-cdc-enabled-instance \
+  --apply-immediately
+
+aws rds modify-db-cluster \
+  --db-cluster-identifier ordering-prod-cluster \
+  --db-cluster-parameter-group-name ordering-postgres-cluster-param-group-qa-cdc-enabled \
+  --apply-immediately
+
+🧩 6️⃣ Apply & Validate Safely
+
+Reboot reader instance first, then fail over or reboot writer.
+
+Check:
+
+SHOW wal_level;
+SHOW max_wal_senders;
+SHOW max_replication_slots;
+
+
+✅ Expect:
+
+wal_level = logical
+max_wal_senders = 10
+max_replication_slots = 10
