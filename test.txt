@@ -1,3 +1,7 @@
+
+
+
+
 🧩 1️⃣ Understand Parameter Scope
 Parameter	Scope	Modify In
 wal_level	DB instance	DB parameter group
@@ -12,6 +16,12 @@ Modify the instance parameter group for wal_level=logical.
 🧩 2️⃣ List Both Groups for Your Cluster
 aws rds describe-db-clusters \
   --query "DBClusters[*].{Cluster:DBClusterIdentifier, ClusterParamGroup:DBClusterParameterGroup, InstanceParamGroup:DBClusterMembers[0].DBInstanceParameterGroup}"
+
+
+aws rds describe-db-instances \
+  --query "DBInstances[?DBClusterIdentifier=='ordering-postgres-qa'].[DBInstanceIdentifier, DBParameterGroups[0].DBParameterGroupName]" \
+  --output table
+
 
 
 ✅ Example:
