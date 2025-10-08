@@ -1,0 +1,103 @@
+Perfect 👌 — here’s the SRE-grade AWS CLI runbook to clone, modify, and attach a new Aurora PostgreSQL cluster parameter group for enabling CDC/logical replication — all without downtime.
+
+🧩 1️⃣ Identify Current Parameter Group
+
+aws rds describe-db-clusters \
+  --query "DBClusters[*].{Cluster:DBClusterIdentifier, ParameterGroup:DBClusterParameterGroup}"
+
+
+[
+  {
+    "Cluster": "aurora-prod-cluster",
+    "ParameterGroup": "aurora-postgresql15-default-cluster"
+  }
+]
+👉 The value of ParameterGroup is your current cluster parameter group.
+
+
+
+🧩 2️⃣ Clone the Parameter Group
+
+Clone your existing parameter group to create a new, editable version:
+
+aws rds copy-db-cluster-parameter-group \
+  --source-db-cluster-parameter-group-identifier aurora-postgresql15-default-cluster \
+  --target-db-cluster-parameter-group-identifier aurora-postgresql15-cdc-enabled \
+  --target-db-cluster-parameter-group-description "CDC Logical Replication enabled parameter group"
+
+🧩 3️⃣ Modify Parameters for CDC
+
+Enable logical replication & configure replication slots:
+
+aws rds modify-db-cluster-parameter-group \
+  --db-cluster-parameter-group-name aurora-postgresql15-cdc-enabled \
+  --parameters \
+      "ParameterName=wal_level,ParameterValue=logical,ApplyMethod=pending-reboot" \
+      "ParameterName=max_wal_senders,ParameterValue=10,ApplyMethod=pending-reboot" \
+      "ParameterName=max_replication_slots,ParameterValue=10,ApplyMethod=pending-reboot"
+
+
+🧠 pending-reboot means parameters will take effect after next instance reboot — we’ll handle this safely using the reader-first strategy.
+
+🧩 4️⃣ Attach the New Parameter Group to the Cluster
+aws rds modify-db-cluster \
+  --db-cluster-identifier aurora-prod-cluster \
+  --db-cluster-parameter-group-name aurora-postgresql15-cdc-enabled \
+  --apply-immediately
+
+
+✅ This applies the new parameter group without rebooting (yet).
+It only marks parameters as “pending reboot”.
+
+🧩 5️⃣ Apply Changes Safely (Reader-First Strategy)
+
+Reboot reader instance(s) first to apply new logical settings.
+
+aws rds reboot-db-instance --db-instance-identifier aurora-prod-reader-1
+
+
+After reboot:
+
+SHOW wal_level;
+
+
+→ should return logical.
+
+Once verified:
+
+Either failover to make that reader the writer:
+
+aws rds failover-db-cluster --db-cluster-identifier aurora-prod-cluster
+
+
+Or wait for your maintenance window to reboot the writer safely.
+
+🧩 6️⃣ Verify Settings on Writer
+
+After failover or maintenance reboot:
+
+SHOW wal_level;
+SHOW max_wal_senders;
+SHOW max_replication_slots;
+
+
+✅ Expect output:
+
+wal_level           | logical
+max_wal_senders     | 10
+max_replication_slots | 10
+
+🧩 7️⃣ Post-change Validation
+
+Check replication health and cluster sync:
+
+SELECT * FROM pg_stat_replication;
+
+
+Monitor CloudWatch for:
+
+AuroraReplicaLag
+
+FreeStorageSpace
+
+Custom metrics: WAL file count, replication lag
