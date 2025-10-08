@@ -2,10 +2,10 @@
 set -euo pipefail
 
 # ========= CONFIG (edit) =========
-REGION="ap-southeast-1"
-CLUSTER_ID="ordering-prod-cluster"          # aurora cluster identifier
-WRITER_INSTANCE_ID="ordering-writer-1"      # writer instance id
-READER_INSTANCE_ID="ordering-reader-1"      # a reader you can reboot first
+REGION="us-east-1"
+CLUSTER_ID="ordering-postgres-qa"          # aurora cluster identifier
+WRITER_INSTANCE_ID="ordering-postgres-1-qa"      # writer instance id
+READER_INSTANCE_ID="ordering-postgres-2-qa"      # a reader you can reboot first
 
 # Names you want for NEW groups (will be created iff missing)
 NEW_CLUSTER_PG="aurora-postgres-cdc-enabled-cluster"
