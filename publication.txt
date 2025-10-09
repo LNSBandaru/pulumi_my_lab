@@ -1,0 +1,98 @@
+Recommended SRE-Grade “No-Downtime (Reader-First)” Approach
+Step 1. Create custom parameter groups
+
+(You may already have from previous setup)
+
+# For the cluster
+aws rds create-db-cluster-parameter-group \
+  --db-cluster-parameter-group-name aurora-pg-cdc-cluster \
+  --db-parameter-group-family aurora-postgresql16 \
+  --description "CDC enabled cluster parameter group"
+
+# For the instances
+aws rds create-db-parameter-group \
+  --db-parameter-group-name aurora-pg-cdc-instance \
+  --db-parameter-group-family aurora-postgresql16 \
+  --description "CDC enabled instance parameter group"
+
+Step 2. Modify parameters (pending reboot)
+aws rds modify-db-cluster-parameter-group \
+  --db-cluster-parameter-group-name aurora-pg-cdc-cluster \
+  --parameters \
+    "ParameterName=rds.logical_replication,ParameterValue=1,ApplyMethod=pending-reboot" \
+    "ParameterName=max_replication_slots,ParameterValue=10,ApplyMethod=pending-reboot" \
+    "ParameterName=max_wal_senders,ParameterValue=10,ApplyMethod=pending-reboot"
+
+aws rds modify-db-parameter-group \
+  --db-parameter-group-name aurora-pg-cdc-instance \
+  --parameters \
+    "ParameterName=wal_level,ParameterValue=logical,ApplyMethod=pending-reboot"
+
+
+These are now pending — no downtime yet.
+
+Step 3. Attach new parameter groups
+aws rds modify-db-cluster \
+  --db-cluster-identifier ordering-postgres-qa \
+  --db-cluster-parameter-group-name aurora-pg-cdc-cluster \
+  --apply-immediately
+
+aws rds modify-db-instance \
+  --db-instance-identifier ordering-postgres-1-qa \
+  --db-parameter-group-name aurora-pg-cdc-instance \
+  --apply-immediately
+
+
+No restart yet — but the system flags these changes as “pending reboot.”
+
+Step 4. Apply with zero downtime (reader-first)
+
+If your Aurora cluster has a reader:
+
+1️⃣ Reboot a reader first:
+
+aws rds reboot-db-instance \
+  --db-instance-identifier ordering-postgres-2-qa
+
+
+Verify after reboot:
+
+SHOW rds.logical_replication;
+SHOW wal_level;
+
+
+✅ should show:
+
+rds.logical_replication = on
+wal_level = logical
+
+
+2️⃣ If good, fail over the reader to be the new writer:
+
+aws rds failover-db-cluster \
+  --db-cluster-identifier ordering-postgres-qa
+
+
+⏱️ Aurora failover typically takes 30–60 seconds — this becomes your effective “downtime.”
+
+3️⃣ (Optional) Reboot the old writer (now reader) later.
+
+Step 5. Validate
+
+Connect to the new writer:
+
+SHOW rds.logical_replication;
+SHOW wal_level;
+SHOW max_wal_senders;
+SHOW max_replication_slots;
+
+Step 6. Create the publication (no reboot required)
+
+Now you can safely create your CDC publication:
+
+CREATE PUBLICATION openflow_publication FOR ALL TABLES;
+
+
+and replication slot:
+
+SELECT * FROM pg_create_logical_replication_slot('openflow_slot', 'pgoutput');
