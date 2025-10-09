@@ -96,3 +96,84 @@ CREATE PUBLICATION openflow_publication FOR ALL TABLES;
 and replication slot:
 
 SELECT * FROM pg_create_logical_replication_slot('openflow_slot', 'pgoutput');
+
+
+
+
+
+
+--------------------------------------
+
+1) Confirm your engine + families
+# Cluster engine & family
+aws rds describe-db-clusters \
+  --db-cluster-identifier ordering-postgres-qa \
+  --query "DBClusters[0].[Engine,EngineVersion,DBClusterParameterGroup]" \
+  --output table
+
+# One instance’s family (instance parameter group family)
+aws rds describe-db-instances \
+  --query "DBInstances[?DBClusterIdentifier=='ordering-postgres-qa']|[0].[DBInstanceIdentifier,DBParameterGroups[0].DBParameterGroupName,Engine,EngineVersion]" \
+  --output table
+
+2) See whether wal_level is even available
+# In the INSTANCE parameter group you tried to modify
+aws rds describe-db-parameters \
+  --db-parameter-group-name aurora-pg-cdc-instance \
+  --query "Parameters[?ParameterName=='wal_level']" \
+  --output json
+
+
+If this returns [], that family doesn’t expose wal_level → don’t try to set it.
+
+3) What to set instead (always safe)
+
+Set cluster-level logical replication knobs (these do exist):
+
+aws rds modify-db-cluster-parameter-group \
+  --db-cluster-parameter-group-name aurora-pg-cdc-cluster \
+  --parameters \
+    "ParameterName=rds.logical_replication,ParameterValue=1,ApplyMethod=pending-reboot" \
+    "ParameterName=max_replication_slots,ParameterValue=10,ApplyMethod=pending-reboot" \
+    "ParameterName=max_wal_senders,ParameterValue=10,ApplyMethod=pending-reboot"
+
+
+For Aurora PG16+: wal_level is already logical and absent from instance params. Just set the three cluster params above and proceed.
+
+For Aurora PG14/15 (some families): if wal_level does show up in step 2, then you can set it on the instance group:
+
+aws rds modify-db-parameter-group \
+  --db-parameter-group-name aurora-pg-cdc-instance \
+  --parameters "ParameterName=wal_level,ParameterValue=logical,ApplyMethod=pending-reboot"
+
+4) Attach groups, apply with minimal disruption
+# Attach groups (no reboot yet; changes become 'pending-reboot')
+aws rds modify-db-cluster \
+  --db-cluster-identifier ordering-postgres-qa \
+  --db-cluster-parameter-group-name aurora-pg-cdc-cluster \
+  --apply-immediately
+
+aws rds modify-db-instance \
+  --db-instance-identifier ordering-postgres-1-qa \
+  --db-parameter-group-name aurora-pg-cdc-instance \
+  --apply-immediately
+
+
+Reader-first activation:
+
+# Reboot a reader first
+aws rds reboot-db-instance --db-instance-identifier ordering-postgres-2-qa
+
+# Verify on that node
+psql -c "SHOW rds.logical_replication;"
+psql -c "SHOW wal_level;"
+psql -c "SHOW max_wal_senders;"
+psql -c "SHOW max_replication_slots;"
+
+# Optional: fail over so the new writer has the settings active with ~30–60s blip
+aws rds failover-db-cluster --db-cluster-identifier ordering-postgres-qa
+
+5) Create the publication (no reboot)
+CREATE PUBLICATION openflow_publication FOR ALL TABLES;  -- or list specific tables
+-- If needed by your connector:
+SELECT * FROM pg_create_logical_replication_slot('openflow_slot','pgoutput');
