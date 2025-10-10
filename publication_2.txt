@@ -1,0 +1,132 @@
+
+Confirm your cluster ID and engine family (e.g. aurora-postgresql16).
+
+You must know these:
+
+Cluster identifier → ordering-postgres-qa
+
+Region → us-east-1
+
+Family → aurora-postgresql16
+
+🧩 Phase 2 – Create CDC parameter groups
+2.1 Create a cluster-level parameter group
+powershell
+Copy code
+aws rds create-db-cluster-parameter-group `
+  --db-cluster-parameter-group-name aurora-pg-cdc-cluster `
+  --db-parameter-group-family aurora-postgresql16 `
+  --description "CDC Logical Replication (cluster-level)"
+2.2 Create an instance-level parameter group
+powershell
+Copy code
+aws rds create-db-parameter-group `
+  --db-parameter-group-name aurora-pg-cdc-instance `
+  --db-parameter-group-family aurora-postgresql16 `
+  --description "CDC Logical Replication (instance-level)"
+⚙️ Phase 3 – Enable logical replication parameters
+3.1 Set cluster parameters
+powershell
+Copy code
+aws rds modify-db-cluster-parameter-group `
+  --db-cluster-parameter-group-name aurora-pg-cdc-cluster `
+  --parameters `
+    "ParameterName=rds.logical_replication,ParameterValue=1,ApplyMethod=pending-reboot" `
+    "ParameterName=max_replication_slots,ParameterValue=10,ApplyMethod=pending-reboot" `
+    "ParameterName=max_wal_senders,ParameterValue=10,ApplyMethod=pending-reboot"
+wal_level is automatically logical in Aurora PG 16+, so you don’t set it.
+
+🧱 Phase 4 – Attach the new parameter groups
+4.1 Cluster-level
+powershell
+Copy code
+aws rds modify-db-cluster `
+  --db-cluster-identifier ordering-postgres-qa `
+  --db-cluster-parameter-group-name aurora-pg-cdc-cluster `
+  --apply-immediately
+4.2 Instance-level
+(attach to both writer and reader)
+
+powershell
+Copy code
+aws rds modify-db-instance `
+  --db-instance-identifier ordering-postgres-1-qa `
+  --db-parameter-group-name aurora-pg-cdc-instance `
+  --apply-immediately
+
+aws rds modify-db-instance `
+  --db-instance-identifier ordering-postgres-2-qa `
+  --db-parameter-group-name aurora-pg-cdc-instance `
+  --apply-immediately
+🔁 Phase 5 – Activate parameters (Reader-First, No-Downtime)
+Reboot reader
+
+powershell
+Copy code
+aws rds reboot-db-instance `
+  --db-instance-identifier ordering-postgres-2-qa `
+  --region us-east-1
+Verify on that reader
+
+sql
+Copy code
+SHOW rds.logical_replication;
+SHOW wal_level;
+SHOW max_wal_senders;
+SHOW max_replication_slots;
+✅ Expect → on, logical, 10, 10.
+
+Fail over (promote reader → writer)
+
+powershell
+Copy code
+aws rds failover-db-cluster `
+  --db-cluster-identifier ordering-postgres-qa `
+  --region us-east-1
+(~30–60 s of writer switch)
+
+Verify on new writer
+
+sql
+Copy code
+SHOW rds.logical_replication;
+SHOW wal_level;
+🧠 Phase 6 – Create replication user (for ETL / OpenFlow)
+sql
+Copy code
+CREATE ROLE cdc_user WITH LOGIN REPLICATION PASSWORD 'StrongPassword!';
+GRANT CONNECT ON DATABASE your_database TO cdc_user;
+GRANT USAGE ON SCHEMA public TO cdc_user;
+GRANT SELECT ON ALL TABLES IN SCHEMA public TO cdc_user;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO cdc_user;
+📰 Phase 7 – Create the Publication
+Now, in psql (or via your OpenFlow connector):
+
+sql
+Copy code
+CREATE PUBLICATION openflow_publication FOR ALL TABLES;
+-- or only specific tables:
+-- CREATE PUBLICATION openflow_publication FOR TABLE public.orders, public.customers;
+🧩 Phase 8 – (If required) Create logical replication slot
+sql
+Copy code
+SELECT * FROM pg_create_logical_replication_slot('openflow_slot','pgoutput');
+Confirm:
+
+sql
+Copy code
+SELECT * FROM pg_replication_slots;
+🔍 Phase 9 – Validate
+sql
+Copy code
+SHOW rds.logical_replication;   -- on
+SHOW wal_level;                 -- logical
+SELECT * FROM pg_publication;
+SELECT * FROM pg_replication_slots;
+✅ Summary
+Phase	Goal	Reboot?	Downtime
+1 – 3	Define & configure param groups	pending-reboot	none
+4	Attach to cluster + instances	pending	none
+5	Activate via reader-first + failover	yes (controlled)	≤ 1 min
+6–8	Create user, publication, slot	no	none
+
