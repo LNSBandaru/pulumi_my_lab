@@ -210,3 +210,68 @@ If wal_level now reports logical, you can safely create your publication:
 
 CREATE PUBLICATION openflow_publication FOR ALL TABLES;
 
+
+
+
+
+
+
+
+
+
+--------------------------------------
+✅ 1. Reboot the Entire Aurora Cluster
+aws rds reboot-db-cluster `
+  --db-cluster-identifier ordering-postgres-qa `
+  --region us-east-1
+
+
+This command:
+
+Restarts all DB instances in that Aurora cluster.
+
+Applies any pending cluster-level parameters (like rds.logical_replication=1).
+
+Usually takes ~60 seconds for a multi-AZ cluster.
+
+⚠️ Note: It momentarily interrupts writes, so best to do it during a planned maintenance window.
+
+✅ 2. (Recommended) Reboot Only a Reader First
+
+To minimize downtime:
+
+Reboot a reader first (e.g., ordering-postgres-2-qa):
+
+aws rds reboot-db-instance `
+  --db-instance-identifier ordering-postgres-2-qa `
+  --region us-east-1
+
+
+Verify replication settings are active:
+
+SHOW rds.logical_replication;
+SHOW wal_level;
+
+
+Then failover the cluster:
+
+aws rds failover-db-cluster `
+  --db-cluster-identifier ordering-postgres-qa `
+  --region us-east-1
+
+
+That sequence activates your pending logical replication parameters with near-zero downtime.
+
+✅ 3. Verify After Restart
+
+After the cluster (or writer) restarts, connect via psql:
+
+SHOW rds.logical_replication;
+SHOW wal_level;
+SHOW max_wal_senders;
+SHOW max_replication_slots;
+
+
+All should now be correctly set (on / logical / appropriate integer values).
+
+
