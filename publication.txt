@@ -193,3 +193,20 @@ aws rds modify-db-cluster-parameter-group \
     "ParameterName=rds.logical_replication,ParameterValue=1,ApplyMethod=pending-reboot" \
     "ParameterName=max_replication_slots,ParameterValue=10,ApplyMethod=pending-reboot" \
     "ParameterName=max_wal_senders,ParameterValue=10,ApplyMethod=pending-reboot"
+
+
+
+🧪 Verify after activation
+
+Once the cluster restarts or fails over:
+
+SHOW rds.logical_replication;   -- should be on / 1
+SHOW wal_level;                 -- will now show logical
+SHOW max_replication_slots;
+SHOW max_wal_senders;
+
+
+If wal_level now reports logical, you can safely create your publication:
+
+CREATE PUBLICATION openflow_publication FOR ALL TABLES;
+
