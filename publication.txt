@@ -242,9 +242,7 @@ To minimize downtime:
 
 Reboot a reader first (e.g., ordering-postgres-2-qa):
 
-aws rds reboot-db-instance `
-  --db-instance-identifier ordering-postgres-2-qa `
-  --region us-east-1
+aws rds reboot-db-instance --db-instance-identifier support-postgres-1-qa --region us-east-1
 
 
 Verify replication settings are active:
