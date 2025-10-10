@@ -177,3 +177,19 @@ aws rds failover-db-cluster --db-cluster-identifier ordering-postgres-qa
 CREATE PUBLICATION openflow_publication FOR ALL TABLES;  -- or list specific tables
 -- If needed by your connector:
 SELECT * FROM pg_create_logical_replication_slot('openflow_slot','pgoutput');
+
+
+
+
+
+
+
+
+--------------------- 3rd Level -----------------------
+
+aws rds modify-db-cluster-parameter-group \
+  --db-cluster-parameter-group-name aurora-pg-cdc-cluster \
+  --parameters \
+    "ParameterName=rds.logical_replication,ParameterValue=1,ApplyMethod=pending-reboot" \
+    "ParameterName=max_replication_slots,ParameterValue=10,ApplyMethod=pending-reboot" \
+    "ParameterName=max_wal_senders,ParameterValue=10,ApplyMethod=pending-reboot"
