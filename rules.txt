@@ -1,0 +1,79 @@
+🔍 1. Role attributes and memberships
+-- Role attributes (LOGIN, CREATEROLE, REPLICATION, etc.)
+SELECT rolname,
+       rolsuper,
+       rolcreaterole,
+       rolcreatedb,
+       rolreplication,
+       rolcanlogin,
+       rolvaliduntil
+FROM pg_roles
+WHERE rolname = '<your_username>';
+
+-- Roles this user belongs to
+SELECT roleid::regrole AS member_of
+FROM pg_auth_members
+WHERE member::regrole = '<your_username>'::regrole;
+
+🧩 2. Database-level privileges
+-- Which databases this user can connect to or has privileges on
+SELECT datname,
+       has_database_privilege('<your_username>', datname, 'CONNECT')  AS can_connect,
+       has_database_privilege('<your_username>', datname, 'CREATE')   AS can_create,
+       has_database_privilege('<your_username>', datname, 'TEMP')     AS can_temp
+FROM pg_database;
+
+🧱 3. Schema-level privileges
+SELECT nspname AS schema,
+       has_schema_privilege('<your_username>', nspname, 'USAGE')  AS usage,
+       has_schema_privilege('<your_username>', nspname, 'CREATE') AS create
+FROM pg_namespace
+WHERE nspname NOT LIKE 'pg_%' AND nspname <> 'information_schema';
+
+📋 4. Table and view privileges
+SELECT table_schema,
+       table_name,
+       privilege_type
+FROM information_schema.role_table_grants
+WHERE grantee = '<your_username>'
+ORDER BY table_schema, table_name;
+
+🧾 5. Sequence privileges
+SELECT table_schema,
+       table_name AS sequence_name,
+       privilege_type
+FROM information_schema.role_sequence_grants
+WHERE grantee = '<your_username>';
+
+🧠 6. Functions and routines
+SELECT routine_schema,
+       routine_name,
+       privilege_type
+FROM information_schema.role_routine_grants
+WHERE grantee = '<your_username>';
+
+🧑‍🤝‍🧑 7. Object ownership summary (optional)
+SELECT 'TABLE' AS obj_type, schemaname AS schema, tablename AS object_name
+FROM pg_tables WHERE tableowner = '<your_username>'
+UNION ALL
+SELECT 'VIEW', schemaname, viewname FROM pg_views WHERE viewowner = '<your_username>'
+UNION ALL
+SELECT 'SEQUENCE', schemaname, sequencename FROM pg_sequences WHERE sequenceowner = '<your_username>'
+ORDER BY obj_type, schema, object_name;
+
+🧩 8. Role grant hierarchy (who granted what)
+SELECT grantor, grantee, privilege_type
+FROM information_schema.role_table_grants
+WHERE grantee = '<your_username>';
+
+🧮 Quick helper to see everything summarized
+\du <your_username>    -- (psql shortcut) shows attributes & memberships
+
+✅ Usage tip
+
+Replace <your_username> with the user you’re investigating, for example:
+
+WHERE rolname = 'cdc_user';
+
+
+Would you like me to give you a single SQL view or script file that prints all these sections together for a given username (for one-click inspection in Aurora)?
