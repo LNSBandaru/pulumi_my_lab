@@ -1,0 +1,118 @@
+Practical options (pick one that fits)
+A — If you know the master username and password
+
+Connect to the writer endpoint as master and run the needed SQL:
+
+-- create the CDC role (as master)
+CREATE ROLE cdc_user WITH LOGIN REPLICATION PASSWORD 'ReplaceWithStrong!';
+GRANT USAGE ON SCHEMA your_schema TO cdc_user;
+GRANT SELECT ON ALL TABLES IN SCHEMA your_schema TO cdc_user;
+ALTER DEFAULT PRIVILEGES IN SCHEMA your_schema GRANT SELECT ON TABLES TO cdc_user;
+
+
+Optionally create a delegated admin so you don’t use master regularly:
+
+CREATE ROLE ops_admin WITH LOGIN CREATEROLE REPLICATION PASSWORD 'RotateMe!';
+-- later ops_admin can create roles, grant replication, etc.
+
+B — If you do NOT know the master password — rotate it (AWS CLI)
+
+You can reset the cluster master password via AWS (requires IAM rights to modify cluster). This does not expose rdsadmin.
+
+# find the cluster's master username (just to confirm)
+aws rds describe-db-clusters \
+  --db-cluster-identifier <cluster-id> \
+  --query "DBClusters[0].[DBClusterIdentifier,MasterUsername]" --output table
+
+# rotate master password (apply immediately)
+aws rds modify-db-cluster \
+  --db-cluster-identifier <cluster-id> \
+  --master-user-password '<NewStrongMasterPassword!>' \
+  --apply-immediately
+
+
+After rotation, connect as that master user to perform role creation/changes.
+
+Note: update any apps/secrets that use the master credentials; better: store credentials in Secrets Manager.
+
+C — If you want secrets automation (recommended)
+
+Store the master creds in AWS Secrets Manager and rotate on schedule. Example (create secret):
+
+aws secretsmanager create-secret \
+  --name prod/<cluster-id>/master \
+  --description "Aurora master credentials for <cluster-id>" \
+  --secret-string '{"username":"<master-username>","password":"<NewStrongMasterPassword!>"}'
+
+
+Use a rotation Lambda (Secrets Manager supports built-in rotation for RDS).
+
+D — If you really need AWS internal help
+
+Only open an AWS Support case for operations that truly require AWS internal accounts (they run on your behalf). Do not ask AWS to reveal rdsadmin. Explain the problem and they’ll act.
+
+Quick verification and helper commands
+
+Find which master user a cluster uses:
+
+aws rds describe-db-clusters \
+  --db-cluster-identifier <cluster-id> \
+  --query "DBClusters[0].[DBClusterIdentifier,MasterUsername]" --output table
+
+
+Check cluster engine / family (to know parameter group families):
+
+aws rds describe-db-clusters \
+  --db-cluster-identifier <cluster-id> \
+  --query "DBClusters[0].[Engine,EngineVersion,DBClusterParameterGroup]" --output table
+
+
+Check current cluster parameter values (e.g., rds.logical_replication):
+
+aws rds describe-db-cluster-parameters \
+  --db-cluster-parameter-group-name <cluster-parameter-group-name> \
+  --query "Parameters[?ParameterName=='rds.logical_replication']" --output json
+
+Example end-to-end flow I recommend
+
+If you don’t have master password — rotate it (step B above).
+
+Store new master password in Secrets Manager (step C).
+
+Connect as master and create ops_admin role with CREATEROLE/REPLICATION.
+
+Use ops_admin for day-to-day user creation and CDC provisioning (create cdc_user, grant SELECT, create publication).
+
+Create your publication and replication slot.
+
+SQL snippets (run as master):
+
+-- create delegated admin (one-time)
+CREATE ROLE ops_admin WITH LOGIN CREATEROLE REPLICATION PASSWORD 'StrongOpsPass!';
+
+-- create cdc user (run as ops_admin or master)
+CREATE ROLE cdc_user WITH LOGIN REPLICATION PASSWORD 'StrongCdcPass!';
+GRANT USAGE ON SCHEMA public TO cdc_user;
+GRANT SELECT ON ALL TABLES IN SCHEMA public TO cdc_user;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO cdc_user;
+
+-- create publication (run as master or owner)
+CREATE PUBLICATION openflow_publication FOR ALL TABLES;
+
+Final notes and safety
+
+Do not attempt to find or recover rdsadmin — it isn’t exposed.
+
+Use the cluster master user for administrative tasks, and minimize use by creating a delegated admin role.
+
+Keep credentials in Secrets Manager and automate rotation.
+
+If you lack IAM rights to rotate the master password, ask your AWS account admins to perform the rotation or provide access.
+
+If you tell me:
+
+your cluster identifier, and
+
+whether you have IAM permission to modify-db-cluster,
+
+I’ll produce the exact, safe AWS CLI + SQL commands tailored to your cluster to rotate the master password, create ops_admin, create cdc_user, store secrets in Secrets Manager, and verify everything.
