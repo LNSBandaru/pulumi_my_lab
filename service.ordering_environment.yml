@@ -1,0 +1,95 @@
+# Pulumi Configuration
+PULUMI_STACK: dev
+PULUMI_SECRETS_PROVIDER: awskms:///arn:aws:kms:us-east-1:076813841146:key/e2020d69-418f-41d0-a4c1-7e927a5ac2af
+PULUMI_BACKEND_URL: s3://pulumi-state-076813841146/services.ordering
+
+# Global Configuration
+EXTRA_TAGS:
+  map-migrated: d-server-01ptk22jl7w1o7
+
+# VPC Configuration
+VPC_ID: vpc-00deccb411da52653
+
+# Aurora Configuration
+AURORA_ALLOWED_INGRESS_CIDRS: ["10.255.104.0/22", "10.254.60.0/22", "10.6.0.0/16", "10.24.236.0/22", "10.25.236.0/22", "10.24.237.209/22"]
+AURORA_CLUSTER_PARAMETERS: 
+  shared_preload_libraries: pg_stat_statements,auto_explain
+  auto_explain.log_min_duration: 5000
+  work_mem: 24576
+  apg_write_forward.connect_timeout: 40
+  temp_buffers: 3000
+  rds.logical_replication: 1
+AURORA_INSTANCE_PARAMETERS: 
+  shared_preload_libraries: pg_stat_statements,auto_explain
+  auto_explain.log_min_duration: 5000
+  work_mem: 24576
+  temp_buffers: 3000
+
+# ALB Configuration
+ALB_ROUTE53_ZONE_ID: Z06029952GJKUQZ7Y2F8G
+ALB_ALLOWED_INGRESS_CIDRS:
+- 10.6.0.0/16
+- 10.7.0.0/18
+- 10.93.64.0/23
+- 10.93.66.0/23
+- 10.93.68.0/23
+- 10.223.247.128/25
+- 10.223.0.0/16
+- 10.254.60.0/22
+- 10.255.104.0/22
+# VPC Link access through public subnets
+- 10.93.82.0/23
+- 10.93.84.0/23
+- 10.93.86.0/23
+
+# ECS Environment Variables
+ECS_TASK_CPU_ARCHITECTURE: ARM64
+ECS_TASK_ENVIRONMENT:
+  NODE_OPTIONS: "--unhandled-rejections=warn"
+  ELASTIC_APM_SERVER_URL: https://unity-tp-dev-qa-observability.apm.vpce.us-east-1.aws.elastic-cloud.com
+  ELASTIC_APM_SERVICE_NAME: ordering  
+  ELASTIC_APM_TRANSACTION_IGNORE_URLS: "*/heartbeat"
+  ELASTIC_APM_TRANSACTION_SAMPLE_RATE: 0.5
+  ELASTIC_APM_ACTIVE: true
+  ELASTIC_APM_LOG_UNCAUGHT_EXCEPTIONS: true
+  ELASTIC_APM_ENVIRONMENT: dev
+
+HTTP_ECS_TASK_ENVIRONMENT:
+  ELASTIC_APM_SERVICE_NODE_NAME: http
+
+RMQ_ECS_TASK_ENVIRONMENT:
+  ELASTIC_APM_SERVICE_NODE_NAME: rmq
+
+BATCH_ECS_TASK_ENVIRONMENT:
+  ELASTIC_APM_SERVICE_NODE_NAME: batch
+
+# NODE_CONFIG
+NODE_CONFIG_JWT_ISSUER_URLS: ["https://sva-openid.dev.aws.cloud.stqlp.org"]
+NODE_CONFIG_ARES_BASE_URL: "http://ld-billing01.corp.securustech.net:8084/DEV/DebitService/v02/"
+NODE_CONFIG_CATALOG_SERVICE_BASE_URL: "http://catalog.dev.tp.stqlp.org"
+NODE_CONFIG_CUSTOMER_SERVICE_BASE_URL: "https://customer.dev.tp.stqlp.org"
+NODE_CONFIG_ELIGIBILITY_SERVICE_BASE_URL: "https://eligibility.dev.tp.stqlp.org"
+NODE_CONFIG_INMATE_SERVICE_BASE_URL: "https://inmate.dev.tp.stqlp.org"
+NODE_CONFIG_PAYMENT_SERVICE_BASE_URL: "https://payment.dev.tp.stqlp.org"
+NODE_CONFIG_TAX_SERVICE_BASE_URL: "https://tax.dev.tp.stqlp.org"
+NODE_CONFIG_DEVICE_SERVICE_BASE_URL: "https://device.dev.tp.stqlp.org"
+NODE_CONFIG_ELASTIC_HOST: "ld-tabapp01.lab.securustech.net:21162"
+NODE_CONFIG_SDS_HOST: "http://ld-soa01.lab.securustech.net:9099"
+NODE_CONFIG_EMS_SEND_EMAIL_LIFE_RAY_GROUP_ID: "20121"
+NODE_CONFIG_EMS_SEND_EMAIL_URL: "http://ewsgreen.kube.lab.securustech.net/ews/notifications/SendEmail"
+NODE_CONFIG_CUSTOMER_ELASTIC_HOST: "ld-tabapp01.lab.securustech.net:21162"
+NODE_CONFIG_LOGS_ELASTIC_HOST: "telemetryda.dev.tp.stqlp.org"
+NODE_CONFIG_PODCAST_ELASTIC_HOST: "ld-tabapp01.lab.securustech.net:21162"
+NODE_CONFIG_RMQ_HOSTS: ["amqps://unityrmq_dev:Q2gAJ.}z)Y6.(k!<jzFl@b-aafeddfb-885b-4e27-b38f-f837135efaec.mq.us-east-1.amazonaws.com:5671"]
+NODE_CONFIG_LOG_LEVEL: "debug"
+HTTP_ECS_TRACING_AGENT_ADDRESS: "172.31.76.232"
+
+# Features
+NODE_CONFIG_FEATURE_CREATE_V2_ORDER_FOR_LEGACY_MUSIC: true
+NODE_CONFIG_FEATURE_ELIGIBILITY: true
+NODE_CONFIG_FEATURE_TAX_SERVICE: true
+NODE_CONFIG_FEATURE_SUBSCRIPTION_TIER_MODEL: true
+NODE_CONFIG_FEATURE_BULK_CANCEL_CHILD_ORDERS: true
+NODE_CONFIG_FEATURES:
+  bulkCancelRedeemedOrders: true
+  eligibilityByInmateService: true
