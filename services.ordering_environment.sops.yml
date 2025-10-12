@@ -1,0 +1,13 @@
+AURORA_MASTER_PASSWORD: ENC[AES256_GCM,data:G5xtWiD42rYcQWDFWI1bLw==,iv:edwec1VZlR9Xe4rVZ22TnEYhyByRgQZ/lzqqUN+hw0I=,tag:XBxC0nqx2Xdl2p2mRISsAw==,type:str]
+AURORA_SERVICE_PASSWORD: ENC[AES256_GCM,data:QTJkpoq2+n+K02yTTYNpiA==,iv:P8sX017HdrSrfnNogh5na4hkfwGLkeQKGKaeR5PjVmU=,tag:MB7CeSNLAP3Z/RSdNizQJw==,type:str]
+sops:
+    attention: This section contains key material that should only be modified with
+        extra care. See `sops -h`.
+    version: '1.18'
+    unencrypted_suffix: _unencrypted
+    kms:
+    -   arn: arn:aws:kms:us-east-1:076813841146:key/e2020d69-418f-41d0-a4c1-7e927a5ac2af
+        enc: AQICAHiIiI2ROZ2pMp8KsOpZDkiMseimTQ/9rmkLd0nkcfM5zQELFX3QyU6sP3Zgf9M3cje/AAAAfjB8BgkqhkiG9w0BBwagbzBtAgEAMGgGCSqGSIb3DQEHATAeBglghkgBZQMEAS4wEQQMeMsS1e6aggr+FW/TAgEQgDtVoFgGheO9bNcJ6P5YvQhomEj+gcPxzkeOl2AuyhtenLNYa/BX27N+e2V8IxIIgEb/+BMNb1TtmuVVzQ==
+        created_at: '2023-03-07T22:02:26Z'
+    lastmodified: '2023-03-07T22:02:26Z'
+    mac: ENC[AES256_GCM,data:0SIP/mQmImopmdZoCv1t1MO0dBMsVelOAKLh13cglk8xqiPXnY0X8TM/0jPYHlKksV3F69gm5HgWb5d2FEv9jpHFRYt+molmxlkY4wWhavDc99SlUJwS2DOB7fi/DDDsXQmgex54Aa/e6uoNXGf7SvjpFbWhBt87odzlQ3xOEPo=,iv:hoWCz3j6Bpe/2g7td4jxdZW4Yyrf8YRokQfHGBWMUdo=,tag:n6nal+QDaRGTIsrWTZ0LJg==,type:str]
