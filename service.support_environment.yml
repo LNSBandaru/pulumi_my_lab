@@ -1,0 +1,56 @@
+# Pulumi Configuration
+PULUMI_STACK: dev
+PULUMI_SECRETS_PROVIDER: awskms:///arn:aws:kms:us-east-1:076813841146:key/e2020d69-418f-41d0-a4c1-7e927a5ac2af
+PULUMI_BACKEND_URL: s3://pulumi-state-076813841146/services.support
+
+# VPC Configuration
+VPC_ID: vpc-00deccb411da52653
+
+# Aurora Configuration
+AURORA_ALLOWED_INGRESS_CIDRS:
+- 10.6.0.0/16
+- 10.254.60.0/22
+- 10.255.104.0/22
+
+# ALB Configuration
+ALB_ROUTE53_ZONE_ID: Z06029952GJKUQZ7Y2F8G
+ALB_ALLOWED_INGRESS_CIDRS:
+- 10.6.0.0/16
+- 10.7.0.0/18
+- 10.93.64.0/23
+- 10.93.66.0/23
+- 10.93.68.0/23
+- 10.223.247.128/25
+- 10.223.0.0/16
+- 10.254.60.0/22
+- 10.255.104.0/22
+
+# ECS Environment Variables
+ECS_TASK_CPU_ARCHITECTURE: ARM64
+ECS_TASK_ENVIRONMENT:
+  NODE_OPTIONS: "--unhandled-rejections=warn"
+  ELASTIC_APM_SERVER_URL: https://unity-tp-dev-qa-observability.apm.vpce.us-east-1.aws.elastic-cloud.com
+  ELASTIC_APM_SERVICE_NAME: support
+  ELASTIC_APM_SERVICE_NODE_NAME: http 
+  ELASTIC_APM_TRANSACTION_IGNORE_URLS: "*/heartbeat"
+  ELASTIC_APM_TRANSACTION_SAMPLE_RATE: 0.5
+  ELASTIC_APM_ACTIVE: true
+  ELASTIC_APM_LOG_UNCAUGHT_EXCEPTIONS: true
+  ELASTIC_APM_ENVIRONMENT: dev
+
+# NODE_CONFIG
+NODE_CONFIG_JWT_ISSUER_URLS:
+  - "https://sva-openid.dev.aws.cloud.stqlp.org"
+NODE_CONFIG_CUSTOMER_SERVICE_BASE_URL: "https://customer.dev.tp.stqlp.org"
+NODE_CONFIG_DEVICE_SERVICE_BASE_URL: "https://device.dev.tp.stqlp.org"
+NODE_CONFIG_SALES_FORCE_OAUTH_CONFIG_GRANT_TYPE: "password"
+NODE_CONFIG_SALES_FORCE_OAUTH_CONFIG_USERNAME: "tpsupportuser@securustechnologies.com.securfull"
+NODE_CONFIG_SALES_FORCE_OAUTH_URL: "https://test.salesforce.com/services/oauth2/token"
+NODE_CONFIG_TICKET_EMAIL_TRANSPORT:
+  SES: true
+NODE_CONFIG_TICKET_EMAIL_TO:
+  - "stephen.liong@securustechnologies.com"
+
+# Features
+NODE_CONFIG_FEATURES:
+  commCenterParity: true
