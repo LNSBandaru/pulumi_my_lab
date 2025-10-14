@@ -49,9 +49,7 @@ export const handler = async () => {
       )
     ).SecretString;
 
-    if (cdcRaw) 
-      cdcUserSecret = JSON.parse(cdcRaw);
-
+    if (cdcRaw) cdcUserSecret = JSON.parse(cdcRaw);
   }
 
   const { username, password } = serviceSecret;
@@ -104,6 +102,7 @@ export const handler = async () => {
 
   await serviceConn.connect();
   try {
+    await query(serviceConn, `CREATE SCHEMA IF NOT EXISTS ${schema}`);
     await query(
       serviceConn,
       `CREATE EXTENSION IF NOT EXISTS pg_trgm SCHEMA ${schema} CASCADE`,
@@ -166,7 +165,8 @@ export const handler = async () => {
           adminConn,
           `CREATE USER ${cdcUsername} WITH ENCRYPTED PASSWORD '${cdcPassword}'`,
         );
-      } else {}
+      } else {
+      }
     } finally {
       await adminConn.end();
     }
@@ -197,18 +197,14 @@ export const handler = async () => {
         `GRANT rds_replication, rds_superuser TO ${cdcUsername}`,
       );
       await query(
-        cdcDbConn, 
+        cdcDbConn,
         `CREATE PUBLICATION IF NOT EXISTS cdc_publication FOR ALL TABLES`,
       );
     } finally {
       await cdcDbConn.end();
     }
-
-    const usrMsg = [serviceSecret.username, cdcUserSecret?.username]
-      .filter(Boolean)
-      .join(' & ');
     return {
-      message: `Database '${database}' for username(s) '${usrMsg}' is ready for use!`,
+      message: `Database '${database}' for usernames for usernames '${cdcUserSecret.username} & ${serviceSecret.username}' is ready for use!`,
     };
   } else {
     return {
