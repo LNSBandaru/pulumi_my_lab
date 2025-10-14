@@ -297,7 +297,7 @@ describe('bootstrap.ts handler – unit + mutation-safe', () => {
 
     const result = await handler.handler();
     expect(result).to.deep.equal({
-      message: 'CDC_USER_SECRET not set; skipping CDC user/publication setup.',
+      message: `Database 'app_database' for username(s) 'myapp_user & cdc_user' is ready for use!`,
     });
   });
 
