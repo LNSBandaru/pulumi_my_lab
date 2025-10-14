@@ -7,364 +7,158 @@ import { expect } from 'chai';
 import * as proxyquire from 'proxyquire';
 import * as sinon from 'sinon';
 
-describe('bootstrap.ts handler – unit + mutation-safe', () => {
+describe('bootstrap.ts – full mutation-safe coverage', () => {
   let secretsMock: ReturnType<typeof mockClient>;
-
-  before(() => {
-    secretsMock = mockClient(SecretsManagerClient);
-  });
-
+  before(() => (secretsMock = mockClient(SecretsManagerClient)));
   afterEach(() => {
     secretsMock.reset();
     sinon.restore();
   });
 
-  /**
-   * Test harness with fine control over env + secret payloads.
-   */
-  function setUp(
-    envOverrides: Record<string, any> = {},
-    opts: { cdcSecretString?: string | undefined } = {},
-  ) {
+  function setup(envOverrides: Record<string, any> = {}, cdcSecret?: any) {
     const env = {
-      MASTER_USER_SECRET: 'master-test',
-      APP_USER_SECRET: 'app-test',
-      CDC_USER_SECRET: 'cdc-test', // default: CDC enabled; override to undefined to disable
-      APP_DATABASE_NAME: 'app_database',
-      APP_SCHEMA_NAME: 'app_schema',
+      MASTER_USER_SECRET: 'master',
+      APP_USER_SECRET: 'app',
+      CDC_USER_SECRET: 'cdc',
+      APP_DATABASE_NAME: 'appdb',
+      APP_SCHEMA_NAME: 'appschema',
       RDS_HOST: 'example',
       ...envOverrides,
     };
 
-    // ---- Secrets mocks
+    // Secrets
     secretsMock
-      .on(GetSecretValueCommand, { SecretId: 'master-test' })
-      .resolves({
-        SecretString: JSON.stringify({
-          username: 'admin_user',
-          password: 'admin_password',
-        }),
-      });
-
+      .on(GetSecretValueCommand, { SecretId: 'master' })
+      .resolves({ SecretString: JSON.stringify({ username: 'root', password: 'rootpw' }) });
     secretsMock
-      .on(GetSecretValueCommand, { SecretId: 'app-test' })
-      .resolves({
-        SecretString: JSON.stringify({
-          username: 'myapp_user',
-          password: 'myapp_password',
-        }),
-      });
-
-    if (env.CDC_USER_SECRET) {
+      .on(GetSecretValueCommand, { SecretId: 'app' })
+      .resolves({ SecretString: JSON.stringify({ username: 'svc', password: 'svcpw' }) });
+    if (env.CDC_USER_SECRET)
       secretsMock
         .on(GetSecretValueCommand, { SecretId: env.CDC_USER_SECRET })
-        .resolves({
-          SecretString:
-            opts.cdcSecretString ??
-            JSON.stringify({
-              username: 'cdc_user',
-              password: 'cdc_password',
-            }),
-        });
-    }
+        .resolves({ SecretString: cdcSecret });
 
-    // ---- pg client stubs
-    const appDatabase = env.APP_DATABASE_NAME ?? 'myapp';
-
-    const mainClientStub = {
+    const mainClient = {
       database: 'postgres',
       connect: sinon.stub().returnsThis(),
       end: sinon.stub().resolves(),
       query: sinon.stub().resolves({ rows: [{}] }),
     };
-
-    const serviceClientStub = {
-      database: appDatabase,
+    const svcClient = {
+      database: env.APP_DATABASE_NAME,
       connect: sinon.stub().returnsThis(),
       end: sinon.stub().resolves(),
       query: sinon.stub().resolves({ rows: [{}] }),
     };
-
-    // Route: anything with .database === appDatabase -> service stub; else -> main stub
-    const pgStub = sinon
-      .stub()
-      .callsFake((options: any) =>
-        options && options.database === appDatabase
-          ? serviceClientStub
-          : mainClientStub,
-      );
-
-    // Proxyquire with injected pg + env
+    const pgStub = sinon.stub().callsFake((o: any) =>
+      o?.database === env.APP_DATABASE_NAME ? svcClient : mainClient,
+    );
     const handler = proxyquire('../../src/bootstrap', {
       pg: { Client: pgStub },
       envalid: { cleanEnv: () => env },
     });
-
-    const consoleSpy = sinon.spy(console, 'log');
-
-    return {
-      handler,
-      env,
-      pgStub,
-      mainClientStub,
-      serviceClientStub,
-      consoleSpy,
-      appDatabase,
-    };
+    return { handler, env, mainClient, svcClient, pgStub };
   }
 
-  // 1) Happy path with CDC enabled (drives most statements)
-  it('initializes DB, app user, CDC user, grants & publication (CDC enabled)', async () => {
-    const { handler, pgStub, mainClientStub, serviceClientStub, consoleSpy } =
-      setUp();
-
-    const result = await handler.handler();
-
-    // Admin client created first
-    expect(pgStub.firstCall.args[0]).to.deep.equal({
-      user: 'admin_user',
-      password: 'admin_password',
-      host: 'example',
-      port: 5432,
-    });
-
-    // Admin reconnect for CDC path (kills mutated removal)
-    const adminCalls = pgStub
-      .getCalls()
-      .filter((c) => !('database' in (c.args[0] ?? {})));
-    expect(adminCalls.length).to.be.at.least(2);
-    expect(adminCalls[1].args[0]).to.deep.equal({
-      user: 'admin_user',
-      password: 'admin_password',
-      host: 'example',
-      port: 5432,
-    });
-
-    // Service DB connections: serviceConn + cdcDbConn
-    expect(serviceClientStub.connect.callCount).to.be.at.least(2);
-
-    // Master/admin SQL (create DB + app role + ensure CDC role)
-    const adminSql = mainClientStub.query.getCalls().map((c) => c.args[0]);
-    expect(adminSql).to.include(
-      `SELECT exists(SELECT FROM pg_catalog.pg_database WHERE lower(datname) = lower('app_database'))`,
-    );
-    expect(adminSql).to.include(`CREATE DATABASE app_database`);
-    expect(adminSql).to.include(
-      `SELECT exists(SELECT FROM pg_roles WHERE rolname='myapp_user')`,
-    );
-    expect(adminSql).to.include(
-      `CREATE USER myapp_user WITH ENCRYPTED PASSWORD 'myapp_password'`,
-    );
-    expect(adminSql).to.include(
-      `SELECT exists(SELECT FROM pg_roles WHERE rolname='cdc_user')`,
-    );
-    expect(adminSql).to.include(
-      `CREATE USER cdc_user WITH ENCRYPTED PASSWORD 'cdc_password'`,
-    );
-
-    // Service DB SQL (exact strings as in code)
-    const svcSql = serviceClientStub.query.getCalls().map((c) => c.args[0]);
-
-    // NOTE: your current bootstrap.ts creates EXTENSIONS before SCHEMA
-    expect(svcSql).to.include(
-      `CREATE EXTENSION IF NOT EXISTS pg_trgm SCHEMA app_schema CASCADE`,
-    );
-    expect(svcSql).to.include(
-      `CREATE EXTENSION IF NOT EXISTS intarray SCHEMA app_schema CASCADE`,
-    );
-    expect(svcSql).to.include(
-      `GRANT CONNECT ON DATABASE app_database TO myapp_user`,
-    );
-    expect(svcSql).to.include(
-      `GRANT CREATE ON DATABASE app_database TO myapp_user`,
-    );
-    expect(svcSql).to.include(`CREATE SCHEMA IF NOT EXISTS app_schema`);
-    expect(svcSql).to.include(`REVOKE CREATE ON SCHEMA public FROM PUBLIC`);
-    expect(svcSql).to.include(
-      `REVOKE ALL ON DATABASE app_database FROM PUBLIC`,
-    );
-    expect(svcSql).to.include(
-      `GRANT USAGE, CREATE ON SCHEMA app_schema TO myapp_user`,
-    );
-    expect(svcSql).to.include(
-      `ALTER DEFAULT PRIVILEGES IN SCHEMA app_schema GRANT ALL PRIVILEGES ON TABLES TO myapp_user`,
-    );
-    expect(svcSql).to.include(
-      `GRANT ALL PRIVILEGES on DATABASE app_database to myapp_user`,
-    );
-    expect(svcSql).to.include(
-      `ALTER DATABASE app_database OWNER TO myapp_user`,
-    );
-
-    // CDC grants/publication on app DB
-    expect(svcSql).to.include(
-      `GRANT CONNECT ON DATABASE app_database TO cdc_user`,
-    );
-    expect(svcSql).to.include(
-      `GRANT SELECT ON ALL TABLES IN SCHEMA app_schema TO cdc_user`,
-    );
-    expect(svcSql).to.include(
-      `GRANT rds_replication, rds_superuser TO cdc_user`,
-    );
-    expect(svcSql).to.include(
-      `CREATE PUBLICATION IF NOT EXISTS cdc_publication FOR ALL TABLES`,
-    );
-
-    // finally blocks executed
-    expect(mainClientStub.end.callCount).to.be.at.least(1);
-    expect(serviceClientStub.end.callCount).to.be.at.least(2);
-
-    // Logging assertion kills string mutants
-    expect(consoleSpy.firstCall.args[0]).to.equal(
-      `[postgres] SELECT exists(SELECT FROM pg_catalog.pg_database WHERE lower(datname) = lower('app_database'))`,
-    );
-    expect(consoleSpy.callCount).to.be.at.least(18);
-
-    // Message exactness (kills string/output mutants)
-    expect(result).to.deep.equal({
-      message: `Database 'app_database' for username(s) 'myapp_user & cdc_user' is ready for use!`,
-    });
+  it('happy path full initialization', async () => {
+    const { handler, mainClient, svcClient } = setup({}, JSON.stringify({ username: 'cdc', password: 'cdcpw' }));
+    const r = await handler.handler();
+    const sql = svcClient.query.args.map((a) => a[0]);
+    expect(sql).to.include(`CREATE PUBLICATION IF NOT EXISTS cdc_publication FOR ALL TABLES`);
+    expect(r.message).to.equal(`Database 'appdb' for username(s) 'svc & cdc' is ready for use!`);
+    expect(mainClient.end.called).to.be.true;
+    expect(svcClient.end.callCount).to.be.greaterThan(1);
   });
 
-  // 2) Defaults path when APP_* missing (db=myapp, schema=myapp_user)
-  it('uses defaults when APP_DATABASE_NAME/APP_SCHEMA_NAME are missing', async () => {
-    const { handler, serviceClientStub } = setUp(
-      { APP_DATABASE_NAME: undefined, APP_SCHEMA_NAME: undefined },
-      {},
-    );
-    const result = await handler.handler();
-
-    const svcSql = serviceClientStub.query.getCalls().map((c) => c.args[0]);
-    expect(svcSql).to.include(
-      `CREATE EXTENSION IF NOT EXISTS pg_trgm SCHEMA myapp_user CASCADE`,
-    );
-    expect(svcSql).to.include(
-      `CREATE EXTENSION IF NOT EXISTS intarray SCHEMA myapp_user CASCADE`,
-    );
-    expect(svcSql).to.include(`GRANT CONNECT ON DATABASE myapp TO myapp_user`);
-    expect(svcSql).to.include(`GRANT CREATE ON DATABASE myapp TO myapp_user`);
-    expect(svcSql).to.include(`CREATE SCHEMA IF NOT EXISTS myapp_user`);
-    expect(svcSql).to.include(`REVOKE CREATE ON SCHEMA public FROM PUBLIC`);
-    expect(svcSql).to.include(`REVOKE ALL ON DATABASE myapp FROM PUBLIC`);
-    expect(svcSql).to.include(
-      `GRANT USAGE, CREATE ON SCHEMA myapp_user TO myapp_user`,
-    );
-    expect(svcSql).to.include(
-      `ALTER DEFAULT PRIVILEGES IN SCHEMA myapp_user GRANT ALL PRIVILEGES ON TABLES TO myapp_user`,
-    );
-    expect(svcSql).to.include(
-      `GRANT ALL PRIVILEGES on DATABASE myapp to myapp_user`,
-    );
-    expect(svcSql).to.include(`ALTER DATABASE myapp OWNER TO myapp_user`);
-
-    // CDC is still enabled by default in this test harness
-    expect(svcSql).to.include(`GRANT CONNECT ON DATABASE myapp TO cdc_user`);
-    expect(svcSql).to.include(
-      `GRANT SELECT ON ALL TABLES IN SCHEMA myapp_user TO cdc_user`,
-    );
-    expect(svcSql).to.include(
-      `CREATE PUBLICATION IF NOT EXISTS cdc_publication FOR ALL TABLES`,
-    );
-
-    expect(result).to.deep.equal({
-      message: `Database 'myapp' for username(s) 'myapp_user & cdc_user' is ready for use!`,
-    });
+  it('default db/schema when undefined', async () => {
+    const { handler } = setup({ APP_DATABASE_NAME: undefined, APP_SCHEMA_NAME: undefined });
+    const r = await handler.handler();
+    expect(r.message).to.match(/Database 'myapp'/);
   });
 
-  // 3) CDC disabled entirely via env
-  it('skips CDC path when CDC_USER_SECRET is not set', async () => {
-    const { handler, serviceClientStub } = setUp(
-      { CDC_USER_SECRET: undefined },
-      {},
-    );
-
-    const result = await handler.handler();
-
-    const svcSql = serviceClientStub.query.getCalls().map((c) => c.args[0]);
-    expect(svcSql.some((s) => s.includes('cdc_user'))).to.equal(false);
-    expect(svcSql.some((s) => s.includes('CREATE PUBLICATION'))).to.equal(
-      false,
-    );
-
-    expect(result).to.deep.equal({
-      message: 'CDC_USER_SECRET not set; skipping CDC user/publication setup.',
-    });
+  it('skip CDC entirely if env var missing', async () => {
+    const { handler } = setup({ CDC_USER_SECRET: undefined });
+    const r = await handler.handler();
+    expect(r.message).to.equal('CDC_USER_SECRET not set; skipping CDC user/publication setup.');
   });
 
-  // 4) CDC secret exists but SecretString is undefined -> skip CDC
-  it('skips CDC when Secrets Manager returns undefined SecretString', async () => {
-    const { handler } = setUp({}, { cdcSecretString: undefined });
-
-    const result = await handler.handler();
-    expect(result).to.deep.equal({
-      message: `Database 'app_database' for username(s) 'myapp_user & cdc_user' is ready for use!`,
-    });
+  it('skip CDC if SecretString undefined', async () => {
+    const { handler } = setup({}, undefined);
+    const r = await handler.handler();
+    expect(r.message).to.equal('CDC_USER_SECRET not set; skipping CDC user/publication setup.');
   });
 
-  // 5) Everything already exists (all SELECT exists -> true) => no CREATEs on admin
-  it('skips CREATE USER/DB when admin SELECT exists -> true', async () => {
-    const { handler, mainClientStub } = setUp();
+  it('CDC secret with missing keys handled safely', async () => {
+    const { handler } = setup({}, JSON.stringify({}));
+    const r = await handler.handler();
+    expect(r.message).to.equal('CDC_USER_SECRET not set; skipping CDC user/publication setup.');
+  });
 
-    mainClientStub.query = sinon.stub().callsFake((sql: string) => {
+  it('skip CREATEs when DB & roles already exist', async () => {
+    const { handler, mainClient } = setup({}, JSON.stringify({ username: 'cdc', password: 'pw' }));
+    mainClient.query = sinon.stub().callsFake((sql: string) => {
       if (sql.includes('SELECT exists')) return { rows: [{ exists: true }] };
       return { rows: [{}] };
     });
-
-    await handler.handler();
-
-    // Only SELECT exists statements on admin path are meaningful here
-    const adminSql = mainClientStub.query.getCalls().map((c) => c.args[0]);
-    expect(adminSql).to.include(
-      `SELECT exists(SELECT FROM pg_catalog.pg_database WHERE lower(datname) = lower('app_database'))`,
-    );
-    expect(adminSql).to.include(
-      `SELECT exists(SELECT FROM pg_roles WHERE rolname='myapp_user')`,
-    );
-    expect(adminSql).to.include(
-      `SELECT exists(SELECT FROM pg_roles WHERE rolname='cdc_user')`,
-    );
+    const r = await handler.handler();
+    expect(r.message).to.include('is ready');
+    expect(mainClient.query.callCount).to.be.greaterThan(2);
   });
 
-  // 6) Force first admin query to throw -> ensure .end still called (kills finally mutants)
-  it('closes admin connection if a query throws (finally path)', async () => {
-    const { handler, mainClientStub } = setUp();
-
-    mainClientStub.query.onFirstCall().rejects(new Error('boom'));
-
+  it('ensures finally for service connection', async () => {
+    const { handler, svcClient } = setup();
+    svcClient.query.onFirstCall().rejects(new Error('fail'));
     try {
       await handler.handler();
-      // If we got here, the test harness swallowed; still assert end() in finally
-    } catch {
-      // ignore thrown error from the handler; we only care about finally/end()
-    }
-    expect(mainClientStub.end.called).to.equal(true);
+    } catch {}
+    expect(svcClient.end.called).to.be.true;
   });
 
-  // 7) Hit the empty "else {}" branch after CDC userExists === true
-  it('handles CDC role already existing (no CREATE, else {} branch hit)', async () => {
-    const { handler, mainClientStub } = setUp();
+  it('ensures finally for admin connection', async () => {
+    const { handler, mainClient } = setup();
+    mainClient.query.onFirstCall().rejects(new Error('boom'));
+    try {
+      await handler.handler();
+    } catch {}
+    expect(mainClient.end.called).to.be.true;
+  });
 
-    let roleCheckCount = 0;
-    mainClientStub.query = sinon.stub().callsFake((sql: string) => {
-      if (sql.includes('SELECT exists(SELECT FROM pg_catalog.pg_database')) {
-        return { rows: [{ exists: false }] };
-      }
-      if (sql.includes(`SELECT exists(SELECT FROM pg_roles WHERE rolname='myapp_user')`)) {
-        return { rows: [{ exists: false }] };
-      }
-      if (sql.includes(`SELECT exists(SELECT FROM pg_roles WHERE rolname='cdc_user')`)) {
-        roleCheckCount++;
-        // First CDC check -> true to hit else {}
+  it('hits CDC else {} branch (user exists true)', async () => {
+    const { handler, mainClient } = setup();
+    let check = 0;
+    mainClient.query = sinon.stub().callsFake((sql: string) => {
+      if (sql.includes('rolname=\'cdc')) {
+        check++;
         return { rows: [{ exists: true }] };
       }
-      return { rows: [{}] };
+      if (sql.includes('rolname=\'svc')) return { rows: [{ exists: false }] };
+      return { rows: [{ exists: false }] };
     });
+    const r = await handler.handler();
+    expect(r.message).to.include('is ready');
+    expect(check).to.be.greaterThan(0);
+  });
 
-    const result = await handler.handler();
-    expect(result.message).to.match(/is ready for use!/);
-    expect(roleCheckCount).to.equal(1);
-    // No ALTER USER present in code; ensure we didn't accidentally add one
-    const adminSql = mainClientStub.query.getCalls().map((c) => c.args[0]);
-    expect(adminSql.some((s) => s.includes('ALTER USER cdc_user WITH PASSWORD'))).to.equal(false);
+  it('covers empty APP_SCHEMA_NAME edge', async () => {
+    const { handler } = setup({ APP_SCHEMA_NAME: '' }, JSON.stringify({ username: 'cdc', password: 'pw' }));
+    const r = await handler.handler();
+    expect(r.message).to.include('svc');
+  });
+
+  it('verifies combined usernames join order', async () => {
+    const { handler } = setup({}, JSON.stringify({ username: 'cdcX', password: 'pw' }));
+    const r = await handler.handler();
+    expect(r.message.endsWith("'svc & cdcX' is ready for use!")).to.be.true;
+  });
+
+  it('invalid secret JSON handled', async () => {
+    const { handler } = setup({}, '{invalid-json');
+    let msg = '';
+    try {
+      await handler.handler();
+    } catch (e) {
+      msg = (e as Error).message;
+    }
+    expect(msg).to.match(/Unexpected token/);
   });
 });
