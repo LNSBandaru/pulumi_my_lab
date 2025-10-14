@@ -13,6 +13,7 @@ export function validators() {
         'The value of the secret should be a JSON-formatted string which contains properties `username` and `password`.',
     }),
     CDC_USER_SECRET: str({
+      default: undefined,
       desc:
         'Name of the secret that contains CDC (Change Data Capture) user credentials for the same RDS database.<br/>' +
         'The value of this secret must be a JSON-formatted string containing `username` and `password`.',
