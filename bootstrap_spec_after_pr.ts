@@ -284,13 +284,19 @@ describe('Handler - Unit', () => {
     });
 
     it('skips CDC when Secrets Manager returns undefined SecretString', async () => {
-        const { handler } = setUp({}, { cdcSecretString: undefined });
+      const ctx = setUp(); // ✅ Only one argument allowed
+      const { handler } = ctx;
 
-        const result = await handler.handler();
+      // Override CDC secret after setup
+      secretsMock
+        .on(GetSecretValueCommand, { SecretId: ctx.env.CDC_USER_SECRET })
+        .resolves({ SecretString: undefined as any });
 
-        expect(result).to.deep.equal({
-            message: 'CDC_USER_SECRET not set; skipping CDC user/publication setup.',
-        });
+      const result = await handler.handler();
+
+      expect(result).to.deep.equal({
+        message: 'CDC_USER_SECRET not set; skipping CDC user/publication setup.',
+      });
     });
 
   it('handles CDC role already existing (hits empty else {})', async () => {
