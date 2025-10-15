@@ -489,5 +489,127 @@ it('emits the exact CREATE SCHEMA statement (kills string-literal mutant)', asyn
 
       --------
 
+
+        ---------------------------- 2 -----------
+        it('should handle database and user already exist', async () => {
+  const { handler, mainClientStub } = setUp();
+
+  // Make all "SELECT exists(...)" return true → no CREATEs should run.
+  mainClientStub.query = sinon.stub().callsFake((sql: string) => {
+    if (sql.includes('SELECT exists')) return { rows: [{ exists: true }] };
+    return { rows: [{}] };
+  });
+
+  await handler.handler();
+
+  // Only the three EXISTS checks should be invoked on master in this path
+  expect(mainClientStub.query.callCount).to.equal(3);
+
+  const masterSql = mainClientStub.query.getCalls().map((c) => c.args[0]);
+
+  // ❌ If the mutant flips the conditions to always-true, these CREATEs would appear
+  expect(masterSql.some(s => s.startsWith('CREATE DATABASE'))).to.equal(false);
+  expect(masterSql.some(s => s.startsWith('CREATE USER myapp_user'))).to.equal(false);
+});
+
+
+        it('creates database when DB does not exist, but does NOT create app user when user exists', async () => {
+  const { handler, mainClientStub } = setUp();
+
+  mainClientStub.query = sinon.stub().callsFake((sql: string) => {
+    if (sql.includes('FROM pg_catalog.pg_database')) return { rows: [{ exists: false }] }; // create DB
+    if (sql.includes(`rolname='myapp_user'`))       return { rows: [{ exists: true }] };  // user exists
+    return { rows: [{}] };
+  });
+
+  await handler.handler();
+  const adminSql = mainClientStub.query.getCalls().map(c => c.args[0]);
+  expect(adminSql.some(s => s.startsWith('CREATE DATABASE app_database'))).to.equal(true);
+  expect(adminSql.some(s => s.startsWith('CREATE USER myapp_user'))).to.equal(false);
+});
+
+it('does NOT create database when it exists, but creates app user when user missing', async () => {
+  const { handler, mainClientStub } = setUp();
+
+  mainClientStub.query = sinon.stub().callsFake((sql: string) => {
+    if (sql.includes('FROM pg_catalog.pg_database')) return { rows: [{ exists: true }] };  // DB exists
+    if (sql.includes(`rolname='myapp_user'`))       return { rows: [{ exists: false }] }; // create user
+    return { rows: [{}] };
+  });
+
+  await handler.handler();
+  const adminSql = mainClientStub.query.getCalls().map(c => c.args[0]);
+  expect(adminSql.some(s => s.startsWith('CREATE DATABASE'))).to.equal(false);
+  expect(adminSql.some(s => s.startsWith(`CREATE USER myapp_user WITH ENCRYPTED PASSWORD 'myapp_password'`))).to.equal(true);
+});
+
+
+        ----------------------------- 2 -------------
+
   });
 });
+
+
+------------------ PDSU ----------
+a) In “should complete happy path”
+
+Add after you collect/verify svcSql:
+
+// The schema-create statement must be issued exactly as authored
+// (mutating the string to '' will break this).
+const schemaLogSeen = consoleSpy
+  .getCalls()
+  .some(c => c.args[0] === `[app_database] CREATE SCHEMA IF NOT EXISTS app_schema`);
+expect(schemaLogSeen, 'expected exact schema creation log').to.equal(true);
+
+b) In “should provide default values for some configs (CDC on)”
+
+Add after you collect/verify svcSql:
+
+const defaultSchemaLogSeen = consoleSpy
+  .getCalls()
+  .some(c => c.args[0] === `[myapp] CREATE SCHEMA IF NOT EXISTS myapp_user`);
+expect(defaultSchemaLogSeen, 'expected exact default schema creation log').to.equal(true);
+
+
+Why this kills the mutant
+When Stryker replaces the string with '', your code logs [db] with nothing after it; these assertions require the exact CREATE SCHEMA IF NOT EXISTS … text, so the mutant can’t slip by.
+
+3) (Optional but helpful) Split the two conditionals into separate targeted cases
+
+If you want an extra belt-and-suspenders check (sometimes Stryker shows the same surviving conditional in two places), add these two very small tests. They directly exercise one branch true and the other false, then assert CREATE presence/absence:
+
+it('creates database when DB does not exist, but does NOT create app user when user exists', async () => {
+  const { handler, mainClientStub } = setUp();
+
+  mainClientStub.query = sinon.stub().callsFake((sql: string) => {
+    if (sql.includes('FROM pg_catalog.pg_database')) return { rows: [{ exists: false }] }; // create DB
+    if (sql.includes(`rolname='myapp_user'`))       return { rows: [{ exists: true }] };  // user exists
+    return { rows: [{}] };
+  });
+
+  await handler.handler();
+  const adminSql = mainClientStub.query.getCalls().map(c => c.args[0]);
+  expect(adminSql.some(s => s.startsWith('CREATE DATABASE app_database'))).to.equal(true);
+  expect(adminSql.some(s => s.startsWith('CREATE USER myapp_user'))).to.equal(false);
+});
+
+it('does NOT create database when it exists, but creates app user when user missing', async () => {
+  const { handler, mainClientStub } = setUp();
+
+  mainClientStub.query = sinon.stub().callsFake((sql: string) => {
+    if (sql.includes('FROM pg_catalog.pg_database')) return { rows: [{ exists: true }] };  // DB exists
+    if (sql.includes(`rolname='myapp_user'`))       return { rows: [{ exists: false }] }; // create user
+    return { rows: [{}] };
+  });
+
+  await handler.handler();
+  const adminSql = mainClientStub.query.getCalls().map(c => c.args[0]);
+  expect(adminSql.some(s => s.startsWith('CREATE DATABASE'))).to.equal(false);
+  expect(adminSql.some(s => s.startsWith(`CREATE USER myapp_user WITH ENCRYPTED PASSWORD 'myapp_password'`))).to.equal(true);
+});
+
+
+These two aren’t strictly necessary if you apply #1 and #2, but they make the suite mutation-proof if Stryker tries alternate mutants on those branches.
+
+  
