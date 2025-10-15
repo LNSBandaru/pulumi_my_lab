@@ -549,7 +549,31 @@ it('does NOT create database when it exists, but creates app user when user miss
   });
 });
 
+-----------------------------------
 
+it('should handle database and user already exist', async () => {
+  const { handler, mainClientStub } = setUp();
+
+  // Make all "SELECT exists(...)" return true → no CREATEs should run.
+  mainClientStub.query = sinon.stub().callsFake((sql: string) => {
+    if (sql.includes('SELECT exists')) return { rows: [{ exists: true }] };
+    return { rows: [{}] };
+  });
+
+  await handler.handler();
+
+  // Only the three EXISTS checks should be invoked on master in this path
+  expect(mainClientStub.query.callCount).to.equal(3);
+
+  const masterSql = mainClientStub.query.getCalls().map((c) => c.args[0]);
+
+  // ❌ If the mutant flips the conditions to always-true, these CREATEs would appear
+  expect(masterSql.some(s => s.startsWith('CREATE DATABASE'))).to.equal(false);
+  expect(masterSql.some(s => s.startsWith('CREATE USER myapp_user'))).to.equal(false);
+});
+
+
+  
 ------------------ PDSU ----------
 a) In “should complete happy path”
 
