@@ -433,5 +433,32 @@ describe('Handler - Unit', () => {
     expect(adminSql.some((s) => s.startsWith('CREATE USER cdc_user'))).to.equal(false);
   });
 
+    // Ensure CDC failure still calls .end() and does not swallow silently
+  it('ensures all connections close when CDC grant fails mid-way', async () => {
+    const { handler, serviceClientStub } = setUp();
+    const original = serviceClientStub.query;
+    serviceClientStub.query = sinon.stub().callsFake((sql: string) => {
+      if (sql.includes('GRANT rds_replication')) throw new Error('cdc-fail');
+      return original.call(serviceClientStub, sql);
+    });
+    let caught = '';
+    try {
+      await handler.handler();
+    } catch (err) {
+      caught = (err as Error).message;
+    }
+    expect(caught).to.match(/cdc-fail/);
+    expect(serviceClientStub.end.callCount).to.be.greaterThan(1);
+  });
+
+  // Validate CDC_USER_SECRET missing message branch explicitly
+  it('returns correct message when CDC_USER_SECRET env missing', async () => {
+    const { handler } = setUp({ CDC_USER_SECRET: undefined });
+    const result = await handler.handler();
+    expect(result.message).to.equal(
+      'CDC_USER_SECRET not set; skipping CDC user/publication setup.'
+    );
+  });
+
   });
 });
