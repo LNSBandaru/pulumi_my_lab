@@ -460,5 +460,34 @@ describe('Handler - Unit', () => {
     );
   });
 
+    ------------
+it('emits the exact CREATE SCHEMA statement (kills string-literal mutant)', async () => {
+  const { handler, serviceClientStub } = setUp();
+
+  let sawExactCreateSchema = false;
+  const original = serviceClientStub.query;
+
+  // Intercept every service DB query and flip a flag only on the exact string.
+  serviceClientStub.query = sinon.stub().callsFake((sql: string) => {
+    if (sql === `CREATE SCHEMA IF NOT EXISTS app_schema`) {
+      sawExactCreateSchema = true;
+    }
+    return original.call(serviceClientStub, sql);
+  });
+
+  await handler.handler();
+
+  // If Stryker mutates the string to '', this remains false and the test fails.
+  expect(sawExactCreateSchema).to.equal(true);
+
+  // Extra safety: ensure no empty SQL slipped through
+  const sqls = (serviceClientStub.query as sinon.SinonStub)
+    .getCalls()
+    .map(c => c.args[0]);
+  expect(sqls).to.not.include('');
+});
+
+      --------
+
   });
 });
