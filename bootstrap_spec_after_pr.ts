@@ -198,7 +198,7 @@ describe('Handler - Unit', () => {
         `[postgres] SELECT exists(SELECT FROM pg_catalog.pg_database WHERE lower(datname) = lower('app_database'))`,
     );
 
-    // ✅ Final message (order: service first, then CDC)
+    // Final message (order: service first, then CDC)
     expect(result).to.deep.equal({
         message: `Database 'app_database' for username(s) 'myapp_user & cdc_user' is ready for use!`,
     });
@@ -293,60 +293,123 @@ describe('Handler - Unit', () => {
         });
     });
 
-it('handles CDC role already existing (hits empty else {})', async () => {
-  const { handler, mainClientStub } = setUp();
+  it('handles CDC role already existing (hits empty else {})', async () => {
+    const { handler, mainClientStub } = setUp();
 
-  // Make only the CDC role "exists" true; DB & app user are created
-  mainClientStub.query = sinon.stub().callsFake((sql: string) => {
-    if (sql.includes(`FROM pg_catalog.pg_database`)) {
-      return { rows: [{ exists: false }] }; // DB create
+    // Make only the CDC role "exists" true; DB & app user are created
+    mainClientStub.query = sinon.stub().callsFake((sql: string) => {
+      if (sql.includes(`FROM pg_catalog.pg_database`)) {
+        return { rows: [{ exists: false }] }; // DB create
+      }
+      if (sql.includes(`rolname='myapp_user'`)) {
+        return { rows: [{ exists: false }] }; // app user create
+      }
+      if (sql.includes(`rolname='cdc_user'`)) {
+        return { rows: [{ exists: true }] };  // CDC exists → falls into empty else {}
+      }
+      return { rows: [{}] };
+    });
+
+    const result = await handler.handler();
+    // Should still be a success message including both usernames
+    expect(result).to.deep.equal({
+      message: `Database 'app_database' for username(s) 'myapp_user & cdc_user' is ready for use!`,
+    });
+  });
+
+  it('skips CDC when CDC_USER_SECRET env is not set', async () => {
+    const { handler } = setUp({ CDC_USER_SECRET: undefined });
+
+    const result = await handler.handler();
+
+    expect(result).to.deep.equal({
+      message: 'CDC_USER_SECRET not set; skipping CDC user/publication setup.',
+    });
+  });
+
+  it('closes admin connection in finally even if a query throws', async () => {
+    const { handler, mainClientStub } = setUp();
+    mainClientStub.query.onFirstCall().rejects(new Error('boom'));
+    try { await handler.handler(); } catch {}
+    expect(mainClientStub.end.called).to.equal(true);
+  });
+
+  it('closes CDC DB connection in finally even if a CDC grant throws', async () => {
+    const { handler, serviceClientStub } = setUp();
+    // Simulate an error on a CDC grant (executed on the same DB stub)
+    const original = serviceClientStub.query;
+    serviceClientStub.query = sinon.stub().callsFake((sql: string) => {
+      if (sql.includes('GRANT rds_replication')) throw new Error('grant-failed');
+      return original.call(serviceClientStub, sql);
+    });
+    try { await handler.handler(); } catch {}
+    expect(serviceClientStub.end.callCount).to.be.at.least(2);
+  });
+
+  it('skips CDC when CDC_USER_SECRET SecretString is empty', async () => {
+    // If your setUp supports a second param for custom CDC SecretString:
+    const { handler } = setUp({}, { cdcSecretString: '' });
+
+    const result = await handler.handler();
+
+    expect(result).to.deep.equal({
+      message: 'CDC_USER_SECRET not set; skipping CDC user/publication setup.',
+    });
+  });
+
+  it('surfaces a parse error when the CDC secret contains invalid JSON', async () => {
+    const { handler } = setUp({}, { cdcSecretString: '{invalid-json' });
+
+    let caught = '';
+    try {
+      await handler.handler();
+    } catch (e) {
+      caught = (e as Error).message;
     }
-    if (sql.includes(`rolname='myapp_user'`)) {
-      return { rows: [{ exists: false }] }; // app user create
+    // Node/PG/JSON error messages vary slightly across platforms:
+    expect(caught).to.match(/Unexpected token|Expected property name/);
+  });
+
+  it('closes the CDC DB connection in finally even when a CDC grant fails', async () => {
+    const { handler, serviceClientStub } = setUp();
+
+    // Force an error during CDC grants (same DB stub used for service + CDC)
+    const originalQuery = serviceClientStub.query;
+    serviceClientStub.query = sinon.stub().callsFake((sql: string) => {
+      if (sql.includes('GRANT rds_replication')) {
+        throw new Error('grant-failed');
+      }
+      return originalQuery.call(serviceClientStub, sql);
+    });
+
+    try {
+      await handler.handler();
+    } catch {
+      // ignore; we only assert that `end()` in finally was executed
     }
-    if (sql.includes(`rolname='cdc_user'`)) {
-      return { rows: [{ exists: true }] };  // CDC exists → falls into empty else {}
-    }
-    return { rows: [{}] };
+
+    // serviceConn.end() + cdcDbConn.end() -> at least 2 calls
+    expect(serviceClientStub.end.callCount).to.be.at.least(2);
   });
+  it('does not CREATE the CDC user when the role already exists (else {} branch)', async () => {
+    const { handler, mainClientStub } = setUp();
 
-  const result = await handler.handler();
-  // Should still be a success message including both usernames
-  expect(result).to.deep.equal({
-    message: `Database 'app_database' for username(s) 'myapp_user & cdc_user' is ready for use!`,
+    // DB + app role existence can be whatever; key is cdc role exists = true
+    mainClientStub.query = sinon.stub().callsFake((sql: string) => {
+      if (sql.includes('FROM pg_catalog.pg_database')) return { rows: [{ exists: false }] };
+      if (sql.includes(`rolname='myapp_user'`)) return { rows: [{ exists: false }] };
+      if (sql.includes(`rolname='cdc_user'`)) return { rows: [{ exists: true }] };
+      return { rows: [{}] };
+    });
+
+    const result = await handler.handler();
+    expect(result.message).to.equal(
+      `Database 'app_database' for username(s) 'myapp_user & cdc_user' is ready for use!`,
+    );
+
+    const adminSql = mainClientStub.query.getCalls().map((c) => c.args[0]);
+    expect(adminSql.some((s) => s.startsWith('CREATE USER cdc_user'))).to.equal(false);
   });
-});
-
-it('skips CDC when CDC_USER_SECRET env is not set', async () => {
-  const { handler } = setUp({ CDC_USER_SECRET: undefined });
-
-  const result = await handler.handler();
-
-  expect(result).to.deep.equal({
-    message: 'CDC_USER_SECRET not set; skipping CDC user/publication setup.',
-  });
-});
-
-it('closes admin connection in finally even if a query throws', async () => {
-  const { handler, mainClientStub } = setUp();
-  mainClientStub.query.onFirstCall().rejects(new Error('boom'));
-  try { await handler.handler(); } catch {}
-  expect(mainClientStub.end.called).to.equal(true);
-});
-
-it('closes CDC DB connection in finally even if a CDC grant throws', async () => {
-  const { handler, serviceClientStub } = setUp();
-  // Simulate an error on a CDC grant (executed on the same DB stub)
-  const original = serviceClientStub.query;
-  serviceClientStub.query = sinon.stub().callsFake((sql: string) => {
-    if (sql.includes('GRANT rds_replication')) throw new Error('grant-failed');
-    return original.call(serviceClientStub, sql);
-  });
-  try { await handler.handler(); } catch {}
-  expect(serviceClientStub.end.callCount).to.be.at.least(2);
-});
-
-
 
   });
 });
