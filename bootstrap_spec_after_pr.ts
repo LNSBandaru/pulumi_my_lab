@@ -198,7 +198,7 @@ describe('Handler - Unit', () => {
         `[postgres] SELECT exists(SELECT FROM pg_catalog.pg_database WHERE lower(datname) = lower('app_database'))`,
     );
 
-    // Final message (order: service first, then CDC)
+    // ✅ Final message (order: service first, then CDC)
     expect(result).to.deep.equal({
         message: `Database 'app_database' for username(s) 'myapp_user & cdc_user' is ready for use!`,
     });
@@ -346,9 +346,15 @@ describe('Handler - Unit', () => {
     expect(serviceClientStub.end.callCount).to.be.at.least(2);
   });
 
+  // CDC secret SecretString is empty → skip CDC
   it('skips CDC when CDC_USER_SECRET SecretString is empty', async () => {
-    // If your setUp supports a second param for custom CDC SecretString:
-    const { handler } = setUp({}, { cdcSecretString: '' });
+    const ctx = setUp();
+    const { handler } = ctx;
+
+    // Override CDC secret after setup
+    secretsMock
+      .on(GetSecretValueCommand, { SecretId: ctx.env.CDC_USER_SECRET })
+      .resolves({ SecretString: '' });
 
     const result = await handler.handler();
 
@@ -357,8 +363,14 @@ describe('Handler - Unit', () => {
     });
   });
 
-  it('surfaces a parse error when the CDC secret contains invalid JSON', async () => {
-    const { handler } = setUp({}, { cdcSecretString: '{invalid-json' });
+  // CDC secret contains invalid JSON → throws parse error
+  it('throws when CDC secret contains invalid JSON', async () => {
+    const ctx = setUp();
+    const { handler } = ctx;
+
+    secretsMock
+      .on(GetSecretValueCommand, { SecretId: ctx.env.CDC_USER_SECRET })
+      .resolves({ SecretString: '{invalid-json' });
 
     let caught = '';
     try {
@@ -366,46 +378,50 @@ describe('Handler - Unit', () => {
     } catch (e) {
       caught = (e as Error).message;
     }
-    // Node/PG/JSON error messages vary slightly across platforms:
+
+    // Compatible with Node 18+ and V8 parser messages
     expect(caught).to.match(/Unexpected token|Expected property name/);
   });
 
-  it('closes the CDC DB connection in finally even when a CDC grant fails', async () => {
+  // CDC path: ensure cdcDbConn.end() runs in finally even on grant failure
+  it('ensures CDC DB connection is closed in finally even when CDC grant fails', async () => {
     const { handler, serviceClientStub } = setUp();
 
-    // Force an error during CDC grants (same DB stub used for service + CDC)
     const originalQuery = serviceClientStub.query;
     serviceClientStub.query = sinon.stub().callsFake((sql: string) => {
-      if (sql.includes('GRANT rds_replication')) {
-        throw new Error('grant-failed');
-      }
+      if (sql.includes('GRANT rds_replication')) throw new Error('grant-failed');
       return originalQuery.call(serviceClientStub, sql);
     });
 
     try {
       await handler.handler();
     } catch {
-      // ignore; we only assert that `end()` in finally was executed
+      // expected failure
     }
 
-    // serviceConn.end() + cdcDbConn.end() -> at least 2 calls
+    // Should close both serviceConn and CDC connection (2+)
     expect(serviceClientStub.end.callCount).to.be.at.least(2);
   });
-  it('does not CREATE the CDC user when the role already exists (else {} branch)', async () => {
+
+  // CDC user already exists (hits empty else {})
+  it('handles CDC user already existing without CREATE (else {} branch)', async () => {
     const { handler, mainClientStub } = setUp();
 
-    // DB + app role existence can be whatever; key is cdc role exists = true
     mainClientStub.query = sinon.stub().callsFake((sql: string) => {
-      if (sql.includes('FROM pg_catalog.pg_database')) return { rows: [{ exists: false }] };
-      if (sql.includes(`rolname='myapp_user'`)) return { rows: [{ exists: false }] };
-      if (sql.includes(`rolname='cdc_user'`)) return { rows: [{ exists: true }] };
+      if (sql.includes('FROM pg_catalog.pg_database'))
+        return { rows: [{ exists: false }] };
+      if (sql.includes(`rolname='myapp_user'`))
+        return { rows: [{ exists: false }] };
+      if (sql.includes(`rolname='cdc_user'`))
+        return { rows: [{ exists: true }] }; // hits else {}
       return { rows: [{}] };
     });
 
     const result = await handler.handler();
-    expect(result.message).to.equal(
-      `Database 'app_database' for username(s) 'myapp_user & cdc_user' is ready for use!`,
-    );
+
+    expect(result).to.deep.equal({
+      message: `Database 'app_database' for username(s) 'myapp_user & cdc_user' is ready for use!`,
+    });
 
     const adminSql = mainClientStub.query.getCalls().map((c) => c.args[0]);
     expect(adminSql.some((s) => s.startsWith('CREATE USER cdc_user'))).to.equal(false);
