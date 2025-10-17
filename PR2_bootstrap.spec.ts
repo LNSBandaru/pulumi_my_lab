@@ -125,6 +125,11 @@ it('should complete happy path', async () => {
   expect(svcSql).to.include(`GRANT rds_replication, rds_superuser TO cdc_user`);
   expect(svcSql).to.include(`CREATE PUBLICATION IF NOT EXISTS cdc_publication FOR ALL TABLES`);
 
+  // Verify exact schema creation string literal logged (kills string mutation)
+const schemaLogExact = consoleSpy.getCalls()
+  .some(call => call.args[0] === `[app_database] CREATE SCHEMA IF NOT EXISTS app_schema`);
+expect(schemaLogExact, 'exact schema log must exist').to.equal(true);
+
   // Kill string-literal mutant: assert EXACT schema-create log line
   const sawExactSchema = consoleSpy.getCalls()
     .some(c => c.args[0] === `[app_database] CREATE SCHEMA IF NOT EXISTS app_schema`);
@@ -286,5 +291,47 @@ it('closes CDC DB connection in finally even when a CDC grant fails', async () =
   try { await handler.handler(); } catch {}
   expect(serviceClientStub.end.callCount).to.be.at.least(2);
 });
+
+// Kill if (!userExists) mutant (CDC user exists=true branch)
+it('does not create CDC user when role already exists (kills !userExists mutant)', async () => {
+  const { handler, mainClientStub } = setUp();
+
+  // Simulate existing DB + app user, CDC user already exists
+  mainClientStub.query = sinon.stub().callsFake((sql: string) => {
+    if (sql.includes('FROM pg_catalog.pg_database'))
+      return { rows: [{ exists: false }] };
+    if (sql.includes(`rolname='myapp_user'`))
+      return { rows: [{ exists: false }] };
+    if (sql.includes(`rolname='cdc_user'`))
+      return { rows: [{ exists: true }] }; // CDC already exists → skip CREATE
+    return { rows: [{}] };
+  });
+
+  const result = await handler.handler();
+
+  expect(result.message).to.equal(
+    `Database 'app_database' for username(s) 'myapp_user & cdc_user' is ready for use!`,
+  );
+
+  const adminSql = mainClientStub.query.getCalls().map(c => c.args[0]);
+  // Mutant changes if(!userExists) → if(true); this fails without these asserts
+  expect(adminSql.some(s => s.startsWith('CREATE USER cdc_user'))).to.equal(false);
+  expect(adminSql.some(s => s.startsWith('CREATE USER myapp_user'))).to.equal(true);
+});
+
+// Optional safety (covers finally path for CDC grants)
+it('closes CDC DB connection in finally when CDC grant fails mid-way', async () => {
+  const { handler, serviceClientStub } = setUp();
+
+  const originalQuery = serviceClientStub.query;
+  serviceClientStub.query = sinon.stub().callsFake((sql: string) => {
+    if (sql.includes('GRANT rds_replication')) throw new Error('grant-fail');
+    return originalQuery.call(serviceClientStub, sql);
+  });
+
+  try { await handler.handler(); } catch {}
+  expect(serviceClientStub.end.callCount).to.be.at.least(2);
+});
+
 
 });
